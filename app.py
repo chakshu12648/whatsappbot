@@ -25,10 +25,19 @@ ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
 
-GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")  # JSON string in env var
+GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
+if not GOOGLE_CREDENTIALS:
+    raise Exception("Google credentials not found in environment variable")
+
+# Load Google credentials from JSON string
+credentials_info = json.loads(GOOGLE_CREDENTIALS)
+google_credentials = service_account.Credentials.from_service_account_info(
+    credentials_info,
+    scopes=["https://www.googleapis.com/auth/calendar"]
+)
+google_service = build("calendar", "v3", credentials=google_credentials)
 
 # ----------- ZOOM FUNCTIONS -----------
-
 def get_zoom_access_token():
     token_url = "https://zoom.us/oauth/token"
     auth_header = base64.b64encode(f"{ZOOM_CLIENT_ID}:{ZOOM_CLIENT_SECRET}".encode()).decode()
@@ -72,19 +81,8 @@ def create_zoom_meeting(topic, start_time, duration):
     else:
         raise Exception(f"Failed to create Zoom meeting: {response.text}")
 
-# ----------- GOOGLE MEET FUNCTIONS ----------
-
+# ----------- GOOGLE MEET FUNCTIONS -----------
 def create_google_meet(topic, start_time, duration):
-    if not GOOGLE_CREDENTIALS:
-        raise Exception("❌ GOOGLE_CREDENTIALS environment variable not set")
-
-    creds_dict = json.loads(GOOGLE_CREDENTIALS)
-    credentials = service_account.Credentials.from_service_account_info(
-        creds_dict,
-        scopes=["https://www.googleapis.com/auth/calendar"]
-    )
-    service = build("calendar", "v3", credentials=credentials)
-
     start_dt = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%SZ")
     end_dt = start_dt + timedelta(minutes=duration)
 
@@ -100,7 +98,7 @@ def create_google_meet(topic, start_time, duration):
         }
     }
 
-    created_event = service.events().insert(
+    created_event = google_service.events().insert(
         calendarId="primary",
         body=event,
         conferenceDataVersion=1
@@ -109,8 +107,7 @@ def create_google_meet(topic, start_time, duration):
     return created_event["hangoutLink"]
 
 # ----------- FASTAPI ROUTE FOR WHATSAPP -----------
-
-@app.post("/webhook", response_class=PlainTextResponse, response_model=None)
+@app.post("/webhook", response_class=PlainTextResponse)
 async def whatsapp_webhook(request: Request):
     form = await request.form()
     incoming_msg = form.get("Body", "").strip()
@@ -144,10 +141,10 @@ async def whatsapp_webhook(request: Request):
     return Response(content=str(resp), media_type="application/xml")
 
 # ----------- START SERVER WITH UVICORN -----------
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
