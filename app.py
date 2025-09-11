@@ -60,7 +60,11 @@ def create_zoom_meeting(topic, start_time, duration):
         "start_time": start_time,
         "duration": duration,
         "timezone": "UTC",
-        "settings": {"host_video": True, "participant_video": True}
+        "settings": {"join_before_host": False,   # ✅ must wait until host starts
+            "waiting_room": False,       # ✅ no approval needed once host starts
+            "host_video": True,
+            "participant_video": True,
+            "mute_upon_entry": False}
     }
     response = requests.post(meeting_url, headers=headers, json=meeting_data)
     if response.status_code == 201:
