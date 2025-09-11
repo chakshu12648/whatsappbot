@@ -1,9 +1,9 @@
 print("Starting app...")
 
 import os
-import json
 import requests
 import base64
+import json
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, Response
@@ -25,33 +25,25 @@ ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
 
-GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
-if not GOOGLE_CREDENTIALS:
-    raise Exception("Google credentials not found in environment variable")
-
-# Load Google credentials from JSON string
-credentials_info = json.loads(GOOGLE_CREDENTIALS)
+# Load Google service account from environment variable
+credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
 google_credentials = service_account.Credentials.from_service_account_info(
     credentials_info,
     scopes=["https://www.googleapis.com/auth/calendar"]
 )
-google_service = build("calendar", "v3", credentials=google_credentials)
 
 # ----------- ZOOM FUNCTIONS -----------
 def get_zoom_access_token():
     token_url = "https://zoom.us/oauth/token"
     auth_header = base64.b64encode(f"{ZOOM_CLIENT_ID}:{ZOOM_CLIENT_SECRET}".encode()).decode()
-
     headers = {
         "Authorization": f"Basic {auth_header}",
         "Content-Type": "application/x-www-form-urlencoded"
     }
-
     data = {
         "grant_type": "account_credentials",
         "account_id": ZOOM_ACCOUNT_ID
     }
-
     response = requests.post(token_url, headers=headers, data=data)
     if response.status_code == 200:
         return response.json()["access_token"]
@@ -65,7 +57,6 @@ def create_zoom_meeting(topic, start_time, duration):
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
-
     meeting_data = {
         "topic": topic,
         "type": 2,
@@ -74,7 +65,6 @@ def create_zoom_meeting(topic, start_time, duration):
         "timezone": "UTC",
         "settings": {"host_video": True, "participant_video": True}
     }
-
     response = requests.post(meeting_url, headers=headers, json=meeting_data)
     if response.status_code == 201:
         return response.json()["join_url"]
@@ -83,9 +73,9 @@ def create_zoom_meeting(topic, start_time, duration):
 
 # ----------- GOOGLE MEET FUNCTIONS -----------
 def create_google_meet(topic, start_time, duration):
+    service = build("calendar", "v3", credentials=google_credentials)
     start_dt = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%SZ")
     end_dt = start_dt + timedelta(minutes=duration)
-
     event = {
         "summary": topic,
         "start": {"dateTime": start_dt.isoformat() + "Z", "timeZone": "UTC"},
@@ -97,22 +87,19 @@ def create_google_meet(topic, start_time, duration):
             }
         }
     }
-
-    created_event = google_service.events().insert(
+    created_event = service.events().insert(
         calendarId="primary",
         body=event,
         conferenceDataVersion=1
     ).execute()
-
     return created_event["hangoutLink"]
 
 # ----------- FASTAPI ROUTE FOR WHATSAPP -----------
-@app.post("/webhook", response_class=PlainTextResponse)
+@app.post("/webhook", response_class=PlainTextResponse, response_model=None)
 async def whatsapp_webhook(request: Request):
     form = await request.form()
     incoming_msg = form.get("Body", "").strip()
     resp = MessagingResponse()
-
     try:
         # Expected message format: Zoom|Topic|2025-09-06T15:00:00Z|30
         # Or Google|Topic|2025-09-06T15:00:00Z|30
