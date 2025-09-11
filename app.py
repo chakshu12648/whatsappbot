@@ -11,6 +11,9 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 app = FastAPI()
+@app.get("/")
+async def root():
+    return PlainTextResponse("🚀 WhatsApp Bot is running on Render!")
 
 # ----------- ENVIRONMENT VARIABLES -----------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
