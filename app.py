@@ -1,29 +1,21 @@
 print("Starting app...")
 
 import os
+import json
 import requests
 import base64
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse
-from fastapi.responses import Response
+from fastapi.responses import PlainTextResponse, Response
 from twilio.twiml.messaging_response import MessagingResponse
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 app = FastAPI()
+
 @app.get("/")
 async def root():
     return PlainTextResponse("🚀 WhatsApp Bot is running on Render!")
-    
-@app.get("/check-env")
-async def check_env():
-    return {
-        "TWILIO_ACCOUNT_SID": os.getenv("TWILIO_ACCOUNT_SID"),
-        "ZOOM_CLIENT_ID": os.getenv("ZOOM_CLIENT_ID"),
-        "ZOOM_ACCOUNT_ID": os.getenv("ZOOM_ACCOUNT_ID"),
-        "GOOGLE_FILE_EXISTS": os.path.exists("service_account.json")
-    }
 
 # ----------- ENVIRONMENT VARIABLES -----------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
@@ -33,7 +25,7 @@ ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
 
-GOOGLE_SERVICE_ACCOUNT_FILE = "service_account.json"
+GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")  # JSON string in env var
 
 # ----------- ZOOM FUNCTIONS -----------
 
@@ -83,8 +75,12 @@ def create_zoom_meeting(topic, start_time, duration):
 # ----------- GOOGLE MEET FUNCTIONS ----------
 
 def create_google_meet(topic, start_time, duration):
-    credentials = service_account.Credentials.from_service_account_file(
-        GOOGLE_SERVICE_ACCOUNT_FILE,
+    if not GOOGLE_CREDENTIALS:
+        raise Exception("❌ GOOGLE_CREDENTIALS environment variable not set")
+
+    creds_dict = json.loads(GOOGLE_CREDENTIALS)
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_dict,
         scopes=["https://www.googleapis.com/auth/calendar"]
     )
     service = build("calendar", "v3", credentials=credentials)
@@ -152,6 +148,7 @@ async def whatsapp_webhook(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
