@@ -79,23 +79,29 @@ def create_google_meet(topic, start_time, duration):
     service = build("calendar", "v3", credentials=google_credentials)
     start_dt = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%SZ")
     end_dt = start_dt + timedelta(minutes=duration)
+    
     event = {
         "summary": topic,
         "start": {"dateTime": start_dt.isoformat() + "Z", "timeZone": "UTC"},
         "end": {"dateTime": end_dt.isoformat() + "Z", "timeZone": "UTC"},
-        "conferenceData": {
-            "createRequest": {
-                "requestId": f"meet-{datetime.utcnow().timestamp()}",
-                "conferenceSolutionKey": {"type": "hangoutsMeet"}
-            }
-        }
+        # Only include conferenceData if service account can create Meet
+        # "conferenceData": {
+        #     "createRequest": {
+        #         "requestId": f"meet-{datetime.utcnow().timestamp()}",
+        #         "conferenceSolutionKey": {"type": "hangoutsMeet"}
+        #     }
+        # }
     }
+
     created_event = service.events().insert(
-        calendarId="primary",
-        body=event,
-        conferenceDataVersion=1
+        calendarId="primary",  # or a shared calendar ID your service account has access to
+        body=event
     ).execute()
-    return created_event.get("hangoutLink", "No link found")
+    
+    # If conferenceData exists, you can extract Meet link like this:
+    meet_link = created_event.get("hangoutLink", "No Google Meet link created")
+    return meet_link
+
 
 # ----------- FASTAPI ROUTE FOR WHATSAPP -----------
 @app.post("/webhook", response_class=PlainTextResponse, response_model=None)
