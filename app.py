@@ -27,6 +27,9 @@ ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
 
 # Load Google service account from environment variable
 credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+# Fix the private_key line breaks
+credentials_info["private_key"] = credentials_info["private_key"].replace("\\n", "\n")
+
 google_credentials = service_account.Credentials.from_service_account_info(
     credentials_info,
     scopes=["https://www.googleapis.com/auth/calendar"]
@@ -82,7 +85,7 @@ def create_google_meet(topic, start_time, duration):
         "end": {"dateTime": end_dt.isoformat() + "Z", "timeZone": "UTC"},
         "conferenceData": {
             "createRequest": {
-                "requestId": "meet123",
+                "requestId": f"meet-{datetime.utcnow().timestamp()}",
                 "conferenceSolutionKey": {"type": "hangoutsMeet"}
             }
         }
@@ -92,7 +95,7 @@ def create_google_meet(topic, start_time, duration):
         body=event,
         conferenceDataVersion=1
     ).execute()
-    return created_event["hangoutLink"]
+    return created_event.get("hangoutLink", "No link found")
 
 # ----------- FASTAPI ROUTE FOR WHATSAPP -----------
 @app.post("/webhook", response_class=PlainTextResponse, response_model=None)
@@ -131,6 +134,7 @@ async def whatsapp_webhook(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
