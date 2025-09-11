@@ -136,7 +136,7 @@ async def whatsapp_webhook(request: Request):
     except Exception as e:
         resp.message(f"❌ Error: {str(e)}")
 
-     return Response(content=str(resp), media_type="application/xml")
+    return Response(content=str(resp), media_type="application/xml")
 
 # ----------- START SERVER WITH UVICORN -----------
 
