@@ -15,6 +15,15 @@ app = FastAPI()
 @app.get("/")
 async def root():
     return PlainTextResponse("🚀 WhatsApp Bot is running on Render!")
+    
+@app.get("/check-env")
+async def check_env():
+    return {
+        "TWILIO_ACCOUNT_SID": os.getenv("TWILIO_ACCOUNT_SID"),
+        "ZOOM_CLIENT_ID": os.getenv("ZOOM_CLIENT_ID"),
+        "ZOOM_ACCOUNT_ID": os.getenv("ZOOM_ACCOUNT_ID"),
+        "GOOGLE_FILE_EXISTS": os.path.exists("service_account.json")
+    }
 
 # ----------- ENVIRONMENT VARIABLES -----------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
