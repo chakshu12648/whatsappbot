@@ -10,6 +10,7 @@ from fastapi.responses import PlainTextResponse, Response
 from twilio.twiml.messaging_response import MessagingResponse
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import dateparser
 
 app = FastAPI()
 
@@ -27,7 +28,6 @@ ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
 
 # Load Google service account from environment variable
 credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
-# Fix the private_key line breaks
 credentials_info["private_key"] = credentials_info["private_key"].replace("\\n", "\n")
 
 google_credentials = service_account.Credentials.from_service_account_info(
@@ -43,10 +43,7 @@ def get_zoom_access_token():
         "Authorization": f"Basic {auth_header}",
         "Content-Type": "application/x-www-form-urlencoded"
     }
-    data = {
-        "grant_type": "account_credentials",
-        "account_id": ZOOM_ACCOUNT_ID
-    }
+    data = {"grant_type": "account_credentials", "account_id": ZOOM_ACCOUNT_ID}
     response = requests.post(token_url, headers=headers, data=data)
     if response.status_code == 200:
         return response.json()["access_token"]
@@ -56,10 +53,7 @@ def get_zoom_access_token():
 def create_zoom_meeting(topic, start_time, duration):
     access_token = get_zoom_access_token()
     meeting_url = "https://api.zoom.us/v2/users/me/meetings"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
     meeting_data = {
         "topic": topic,
         "type": 2,
@@ -79,68 +73,100 @@ def create_google_meet(topic, start_time, duration):
     service = build("calendar", "v3", credentials=google_credentials)
     start_dt = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%SZ")
     end_dt = start_dt + timedelta(minutes=duration)
-    
+
     event = {
         "summary": topic,
         "start": {"dateTime": start_dt.isoformat() + "Z", "timeZone": "UTC"},
         "end": {"dateTime": end_dt.isoformat() + "Z", "timeZone": "UTC"},
-        # Only include conferenceData if service account can create Meet
-        # "conferenceData": {
-        #     "createRequest": {
-        #         "requestId": f"meet-{datetime.utcnow().timestamp()}",
-        #         "conferenceSolutionKey": {"type": "hangoutsMeet"}
-        #     }
-        # }
     }
 
     created_event = service.events().insert(
-        calendarId="primary",  # or a shared calendar ID your service account has access to
+        calendarId="primary",
         body=event
     ).execute()
-    
-    # If conferenceData exists, you can extract Meet link like this:
-    meet_link = created_event.get("hangoutLink") or created_event.get("htmlLink")
 
+    meet_link = created_event.get("hangoutLink") or created_event.get("htmlLink")
     return meet_link
 
+# ----------- INTERACTIVE SESSION STORAGE -----------
+user_sessions = {}
+
+def handle_meeting_flow(user_id, message):
+    if user_id not in user_sessions:
+        if "zoom" in message.lower():
+            user_sessions[user_id] = {"platform": "zoom", "step": "topic"}
+            return "✅ Creating a Zoom meeting! What’s the topic?"
+        elif "google" in message.lower():
+            user_sessions[user_id] = {"platform": "google", "step": "topic"}
+            return "✅ Creating a Google Meet! What’s the topic?"
+        else:
+            return "❌ Please say 'create zoom meeting' or 'create google meeting' to start."
+
+    session = user_sessions[user_id]
+
+    if session["step"] == "topic":
+        session["topic"] = message
+        session["step"] = "time"
+        return "⏰ When should the meeting start? (e.g., 'tomorrow 3pm')"
+
+    elif session["step"] == "time":
+        date = dateparser.parse(message)
+        if not date:
+            return "❌ Couldn’t understand the time. Try again (e.g., 'today 5pm')."
+        session["time"] = date.strftime("%Y-%m-%dT%H:%M:%SZ")
+        session["step"] = "duration"
+        return "⏳ How long should the meeting be? (in minutes)"
+
+    elif session["step"] == "duration":
+        try:
+            duration = int(message.strip())
+            session["duration"] = duration
+            session["step"] = "confirm"
+            return (f"✅ Confirming your {session['platform'].title()} meeting:\n"
+                    f"📌 Topic: {session['topic']}\n"
+                    f"⏰ Time: {session['time']}\n"
+                    f"⏳ Duration: {duration} minutes\n"
+                    f"Type 'yes' to confirm or 'no' to cancel.")
+        except:
+            return "❌ Please provide duration in numbers (e.g., 30)."
+
+    elif session["step"] == "confirm":
+        if message.lower() == "yes":
+            platform, topic, time, duration = (
+                session["platform"],
+                session["topic"],
+                session["time"],
+                session["duration"],
+            )
+            if platform == "zoom":
+                link = create_zoom_meeting(topic, time, duration)
+            else:
+                link = create_google_meet(topic, time, duration)
+            del user_sessions[user_id]
+            return f"🎉 {platform.title()} meeting created!\n🔗 {link}"
+        else:
+            del user_sessions[user_id]
+            return "❌ Meeting creation cancelled."
 
 # ----------- FASTAPI ROUTE FOR WHATSAPP -----------
 @app.post("/webhook", response_class=PlainTextResponse, response_model=None)
 async def whatsapp_webhook(request: Request):
     form = await request.form()
     incoming_msg = form.get("Body", "").strip()
+    from_number = form.get("From", "").replace("whatsapp:", "")
     resp = MessagingResponse()
     try:
-        # Expected message format: Zoom|Topic|2025-09-06T15:00:00Z|30
-        # Or Google|Topic|2025-09-06T15:00:00Z|30
-        parts = incoming_msg.split("|")
-        if len(parts) != 4:
-            resp.message("⚠️ Format: Platform|Topic|StartTime(YYYY-MM-DDTHH:MM:SSZ)|Duration(mins)")
-            return str(resp)
-
-        platform, topic, start_time, duration = parts
-        duration = int(duration)
-        platform = platform.lower()
-
-        if platform == "zoom":
-            link = create_zoom_meeting(topic, start_time, duration)
-        elif platform == "google":
-            link = create_google_meet(topic, start_time, duration)
-        else:
-            resp.message("❌ Platform must be 'Zoom' or 'Google'")
-            return str(resp)
-
-        resp.message(f"✅ {platform.capitalize()} meeting created!\nJoin here: {link}")
-
+        reply = handle_meeting_flow(from_number, incoming_msg)
+        resp.message(reply)
     except Exception as e:
         resp.message(f"❌ Error: {str(e)}")
-
     return Response(content=str(resp), media_type="application/xml")
 
 # ----------- START SERVER WITH UVICORN -----------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
