@@ -71,7 +71,7 @@ def create_zoom_meeting(topic, start_time, duration):
     else:
         raise Exception(f"Failed to create Zoom meeting: {response.text}")
 
-# ----------- GOOGLE MEET FUNCTIONS -----------
+# ----------- GOOGLE MEET FUNCTIONS ----------
 
 def create_google_meet(topic, start_time, duration):
     credentials = service_account.Credentials.from_service_account_file(
