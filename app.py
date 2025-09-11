@@ -99,7 +99,8 @@ def create_google_meet(topic, start_time, duration):
     ).execute()
     
     # If conferenceData exists, you can extract Meet link like this:
-    meet_link = created_event.get("hangoutLink", "No Google Meet link created")
+    meet_link = created_event.get("hangoutLink") or created_event.get("htmlLink")
+
     return meet_link
 
 
