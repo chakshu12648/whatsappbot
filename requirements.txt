@@ -49,5 +49,6 @@ uritemplate==4.2.0
 urllib3==2.5.0
 uvicorn==0.35.0
 yarl==1.20.1
-python-multipart
+python-multipart==0.0.20
+
 
