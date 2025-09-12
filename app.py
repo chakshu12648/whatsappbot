@@ -12,7 +12,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import dateparser
 
-from teams_integration import ms_login, ms_callback, create_teams_meeting
+from teams_integration import ms_login, ms_callback, create_teams_meeting, teams_sessions
 
 app = FastAPI()
 
@@ -105,10 +105,9 @@ def create_google_meet(topic, start_time, duration):
 user_sessions = {}
 
 def handle_meeting_flow(user_id, message):
-    """Handles multi-platform meeting creation via WhatsApp"""
     msg = message.lower()
 
-    # Start new session
+    # Initialize session if not exists
     if user_id not in user_sessions:
         if "zoom" in msg:
             user_sessions[user_id] = {"platform": "zoom", "step": "topic"}
@@ -117,29 +116,25 @@ def handle_meeting_flow(user_id, message):
             user_sessions[user_id] = {"platform": "google", "step": "topic"}
             return "✅ Creating a Google Meet! What’s the topic?"
         elif "teams" in msg:
-            user_sessions[user_id] = {"platform": "teams", "step": "login"}
-            return f"✅ Creating a Teams meeting! Please authenticate first:\n/ms/login?user_id={user_id}"
+            # Check if user already authenticated
+            if user_id not in teams_sessions:
+                login_url = f"https://your-app.onrender.com/ms/login?user_id={user_id}"
+                return f"✅ Creating a Microsoft Teams meeting!\nPlease login first: {login_url}"
+            else:
+                user_sessions[user_id] = {"platform": "teams", "step": "topic"}
+                return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
         else:
             return "❌ Say 'create zoom meeting', 'create google meeting', or 'create teams meeting'."
 
     session = user_sessions[user_id]
 
-    # ------------------- Teams flow -------------------
-    if session["platform"] == "teams":
-        # First step: ensure login
-        if session["step"] == "login":
-            return f"Please login to Teams first:\n/ms/login?user_id={user_id}"
-        elif session["step"] == "topic":
-            session["topic"] = message
-            session["step"] = "time"
-            return "⏰ When should the Teams meeting start? (e.g., 'tomorrow 3pm')"
-
-    # ------------------- Zoom / Google / Teams topic -------------------
-    if session["step"] == "topic":
+    # Topic step
+    if session["step"] == "topic" and "topic" not in session:
         session["topic"] = message
         session["step"] = "time"
         return "⏰ When should the meeting start? (e.g., 'tomorrow 3pm')"
 
+    # Time step
     elif session["step"] == "time":
         date = dateparser.parse(message)
         if not date:
@@ -148,6 +143,7 @@ def handle_meeting_flow(user_id, message):
         session["step"] = "duration"
         return "⏳ How long should the meeting be? (in minutes)"
 
+    # Duration step
     elif session["step"] == "duration":
         try:
             duration = int(message.strip())
@@ -161,6 +157,7 @@ def handle_meeting_flow(user_id, message):
         except:
             return "❌ Please provide duration in numbers (e.g., 30)."
 
+    # Confirmation step
     elif session["step"] == "confirm":
         if message.lower() == "yes":
             platform, topic, time, duration = (
@@ -176,10 +173,15 @@ def handle_meeting_flow(user_id, message):
                 elif platform == "google":
                     link = create_google_meet(topic, time, duration)
                 else:
+                    if user_id not in teams_sessions:
+                        login_url = f"https://your-app.onrender.com/ms/login?user_id={user_id}"
+                        del user_sessions[user_id]
+                        return f"❌ You need to login first: {login_url}"
                     link = create_teams_meeting(user_id, topic, time, duration)
 
                 del user_sessions[user_id]
                 return f"🎉 {platform.title()} meeting created!\n🔗 {link}"
+
             except Exception as e:
                 return f"❌ Error creating {platform.title()} meeting: {str(e)}"
         else:
