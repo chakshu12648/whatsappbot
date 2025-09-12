@@ -2,7 +2,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 from fastapi import Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 
 # ------------------- Environment Variables -------------------
 MS_CLIENT_ID = os.getenv("MS_CLIENT_ID")
@@ -42,7 +42,7 @@ async def ms_callback(request: Request):
     user_id = request.query_params.get("state")  # user_id from login
 
     if not code:
-        return {"error": "No code returned"}
+        return HTMLResponse("<h2>❌ No code returned from Microsoft OAuth.</h2>")
 
     data = {
         "client_id": MS_CLIENT_ID,
@@ -57,16 +57,31 @@ async def ms_callback(request: Request):
     token_json = response.json()
 
     if "access_token" not in token_json:
-        return {"error": token_json}
+        return HTMLResponse(f"<h2>❌ Failed to get access token:</h2><pre>{token_json}</pre>")
 
     access_token = token_json["access_token"]
 
     # Store access token for this user
     if user_id:
         teams_sessions[user_id] = access_token
-        return {"message": f"✅ Microsoft login successful for {user_id}!"}
+        return HTMLResponse(f"""
+            <html>
+            <body style="font-family: Arial; text-align: center; margin-top: 50px;">
+                <h2>✅ Microsoft login successful!</h2>
+                <p>User ID: <strong>{user_id}</strong></p>
+                <p>You can now return to WhatsApp and continue creating Teams meetings.</p>
+            </body>
+            </html>
+        """)
     else:
-        return {"message": "✅ Microsoft login successful!", "access_token": access_token}
+        return HTMLResponse(f"""
+            <html>
+            <body style="font-family: Arial; text-align: center; margin-top: 50px;">
+                <h2>✅ Microsoft login successful!</h2>
+                <p>Access token acquired.</p>
+            </body>
+            </html>
+        """)
 
 # ------------------- Teams Meeting Creation -------------------
 def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_minutes: int = 30):
@@ -98,5 +113,6 @@ def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_m
         return response.json().get("joinWebUrl")
     else:
         raise Exception(f"Failed to create Teams meeting: {response.text}")
+
 
 
