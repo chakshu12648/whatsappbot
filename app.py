@@ -119,7 +119,7 @@ def handle_meeting_flow(user_id, message):
             return "✅ Creating a Google Meet! What’s the topic?"
         elif "teams" in msg:
             if not get_token(user_id):
-                login_url = f"https://your-app-url.onrender.com/ms/login?user_id={user_id}"
+                login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
                 return f"✅ Creating a Microsoft Teams meeting!\nPlease login first: {login_url}"
             user_sessions[user_id] = {"platform": "teams", "step": "topic"}
             return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
@@ -169,7 +169,7 @@ def handle_meeting_flow(user_id, message):
                     link = create_google_meet(topic, time, duration)
                 else:
                     if not get_token(user_id):
-                        login_url = f"https://your-app-url.onrender.com/ms/login?user_id={user_id}"
+                        login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
                         del user_sessions[user_id]
                         return f"❌ You need to login first: {login_url}"
                     link = create_teams_meeting(user_id, topic, time, duration)
