@@ -8,26 +8,28 @@ from fastapi.responses import RedirectResponse
 MS_CLIENT_ID = os.getenv("MS_CLIENT_ID")
 MS_CLIENT_SECRET = os.getenv("MS_CLIENT_SECRET")
 MS_REDIRECT_URI = os.getenv("MS_REDIRECT_URI")  # e.g., https://your-app.onrender.com/ms/callback
-MS_TENANT_ID = os.getenv("MS_TENANT_ID", "common")  # use "common" for multi-tenant
+MS_TENANT_ID = os.getenv("MS_TENANT_ID", "common")  # use "common" for multi-tenant apps
 
 AUTH_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/authorize"
 TOKEN_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/token"
 
-# ------------------- In-memory storage -------------------
-teams_sessions = {}  # Stores user_id -> access_token
+# ------------------- In-Memory Storage -------------------
+# Stores user_id -> access_token
+teams_sessions = {}
 
 # ------------------- OAuth Login URL -------------------
 def get_ms_login_url(user_id: str):
-    """Generate login URL and pass user_id in state"""
+    """Generate a Microsoft login URL with user_id passed in state"""
     scope = "User.Read OnlineMeetings.ReadWrite"
-    return (
+    login_url = (
         f"{AUTH_URL}?client_id={MS_CLIENT_ID}"
         f"&response_type=code"
         f"&redirect_uri={MS_REDIRECT_URI}"
         f"&response_mode=query"
         f"&scope={scope}"
-        f"&state={user_id}"
+        f"&state={user_id}"  # used to identify the user in callback
     )
+    return login_url
 
 # ------------------- OAuth Routes -------------------
 async def ms_login(user_id: str):
@@ -37,7 +39,7 @@ async def ms_login(user_id: str):
 async def ms_callback(request: Request):
     """Handle OAuth callback and exchange code for token"""
     code = request.query_params.get("code")
-    state = request.query_params.get("state")  # user_id from login
+    user_id = request.query_params.get("state")  # user_id from login
 
     if not code:
         return {"error": "No code returned"}
@@ -60,17 +62,19 @@ async def ms_callback(request: Request):
     access_token = token_json["access_token"]
 
     # Store access token for this user
-    if state:
-        teams_sessions[state] = access_token
-        return {"message": "Microsoft login successful ✅"}
+    if user_id:
+        teams_sessions[user_id] = access_token
+        return {"message": f"✅ Microsoft login successful for {user_id}!"}
     else:
-        return {"message": "Microsoft login successful ✅", "access_token": access_token}
+        return {"message": "✅ Microsoft login successful!", "access_token": access_token}
 
 # ------------------- Teams Meeting Creation -------------------
 def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_minutes: int = 30):
     """Create a Teams meeting using Microsoft Graph API"""
     if user_id not in teams_sessions:
-        raise Exception("User not logged in with Microsoft Teams. Please login first.")
+        raise Exception(
+            "User not logged in with Microsoft Teams. Please authenticate first by sending 'create teams meeting'."
+        )
 
     access_token = teams_sessions[user_id]
     url = "https://graph.microsoft.com/v1.0/me/onlineMeetings"
@@ -90,8 +94,9 @@ def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_m
     }
 
     response = requests.post(url, headers=headers, json=body)
-    if response.status_code == 201:
+    if response.status_code in (200, 201):
         return response.json().get("joinWebUrl")
     else:
         raise Exception(f"Failed to create Teams meeting: {response.text}")
+
 
