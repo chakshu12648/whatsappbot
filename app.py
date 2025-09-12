@@ -12,7 +12,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import dateparser
 
-from teams_integration import ms_login, ms_callback, create_teams_meeting, teams_sessions
+# Import Teams integration (DB-backed)
+from teams_integration import ms_login, ms_callback, create_teams_meeting, get_token
 
 app = FastAPI()
 
@@ -24,7 +25,6 @@ async def root():
 # ------------------- MS OAuth Routes -------------------
 @app.get("/ms/login")
 async def login_to_ms(request: Request):
-    # Use WhatsApp number as state
     user_id = request.query_params.get("user_id", "default_user")
     return await ms_login(user_id)
 
@@ -40,7 +40,7 @@ ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
 
-# Load Google service account from environment variable
+# Load Google service account
 credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
 credentials_info["private_key"] = credentials_info["private_key"].replace("\\n", "\n")
 
@@ -107,7 +107,6 @@ user_sessions = {}
 def handle_meeting_flow(user_id, message):
     msg = message.lower()
 
-    # Initialize session if not exists
     if user_id not in user_sessions:
         if "zoom" in msg:
             user_sessions[user_id] = {"platform": "zoom", "step": "topic"}
@@ -116,8 +115,9 @@ def handle_meeting_flow(user_id, message):
             user_sessions[user_id] = {"platform": "google", "step": "topic"}
             return "✅ Creating a Google Meet! What’s the topic?"
         elif "teams" in msg:
-            # Check if user already authenticated
-            if user_id not in teams_sessions:
+            # Check DB for token instead of memory
+            token = get_token(user_id)
+            if not token:
                 login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
                 return f"✅ Creating a Microsoft Teams meeting!\nPlease login first: {login_url}"
             else:
@@ -173,10 +173,7 @@ def handle_meeting_flow(user_id, message):
                 elif platform == "google":
                     link = create_google_meet(topic, time, duration)
                 else:
-                    if user_id not in teams_sessions:
-                        login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
-                        del user_sessions[user_id]
-                        return f"❌ You need to login first: {login_url}"
+                    # Fetch token from DB
                     link = create_teams_meeting(user_id, topic, time, duration)
 
                 del user_sessions[user_id]
@@ -206,6 +203,7 @@ async def whatsapp_webhook(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
