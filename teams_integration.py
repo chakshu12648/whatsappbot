@@ -2,7 +2,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 from fastapi import Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 
 # ------------------- Environment Variables -------------------
 MS_CLIENT_ID = os.getenv("MS_CLIENT_ID")
@@ -16,9 +16,16 @@ TOKEN_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/token
 # ------------------- In-Memory Storage -------------------
 teams_sessions = {}  # Stores user_id -> access_token
 
+# ------------------- Utility -------------------
+def normalize_user_id(user_id: str) -> str:
+    """Ensure consistent user_id format (strip WhatsApp suffix, keep only number)."""
+    if not user_id:
+        return "default_user"
+    return user_id.replace("@s.whatsapp.net", "").replace("+", "").strip()
+
 # ------------------- OAuth Login URL -------------------
 def get_ms_login_url(user_id: str):
-    """Generate a Microsoft login URL with user_id passed in state"""
+    user_id = normalize_user_id(user_id)
     scope = "User.Read OnlineMeetings.ReadWrite"
     return (
         f"{AUTH_URL}?client_id={MS_CLIENT_ID}"
@@ -32,16 +39,16 @@ def get_ms_login_url(user_id: str):
 # ------------------- OAuth Routes -------------------
 async def ms_login(user_id: str):
     """Redirect user to Microsoft login"""
+    user_id = normalize_user_id(user_id)
     return RedirectResponse(url=get_ms_login_url(user_id))
-
 
 async def ms_callback(request: Request):
     """Handle OAuth callback and exchange code for token"""
     code = request.query_params.get("code")
-    user_id = request.query_params.get("state")  # user_id comes from state
+    user_id = normalize_user_id(request.query_params.get("state"))
 
     if not code:
-        return HTMLResponse("<h2>❌ No code returned from Microsoft. Please try again.</h2>", status_code=400)
+        return HTMLResponse("<h3>❌ No code returned from Microsoft</h3>")
 
     data = {
         "client_id": MS_CLIENT_ID,
@@ -56,36 +63,24 @@ async def ms_callback(request: Request):
     token_json = response.json()
 
     if "access_token" not in token_json:
-        return HTMLResponse(f"<h2>❌ Authentication failed:</h2><pre>{token_json}</pre>", status_code=400)
+        return HTMLResponse(f"<h3>❌ Failed to authenticate: {token_json}</h3>")
 
     access_token = token_json["access_token"]
 
-    # Save token for this user
-    if user_id:
-        teams_sessions[user_id] = access_token
+    # Store access token for this user
+    teams_sessions[user_id] = access_token
 
-        # Show success page with WhatsApp redirect
-        whatsapp_redirect = f"https://wa.me/{user_id}?text=Hi"
-        html_content = f"""
-        <html>
-            <head>
-                <meta http-equiv="refresh" content="3;url={whatsapp_redirect}" />
-            </head>
-            <body style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
-                <h2>✅ Microsoft login successful!</h2>
-                <p>You can now go back to WhatsApp and type <b>teams</b> to create your meeting.</p>
-                <p>Redirecting you to WhatsApp automatically...</p>
-                <a href="{whatsapp_redirect}">Click here if not redirected</a>
-            </body>
-        </html>
-        """
-        return HTMLResponse(content=html_content, status_code=200)
-
-    return HTMLResponse("<h2>✅ Microsoft login successful, but no user ID found.</h2>", status_code=200)
+    # Success message shown in browser
+    return HTMLResponse(
+        f"<h2>✅ Microsoft login successful!</h2>"
+        f"<p>You can now go back to WhatsApp and type <b>teams</b> again to continue.</p>"
+    )
 
 # ------------------- Teams Meeting Creation -------------------
 def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_minutes: int = 30):
     """Create a Teams meeting using Microsoft Graph API"""
+    user_id = normalize_user_id(user_id)
+
     if user_id not in teams_sessions:
         raise Exception("User not logged in with Microsoft Teams. Please authenticate first.")
 
@@ -111,6 +106,7 @@ def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_m
         return response.json().get("joinWebUrl")
     else:
         raise Exception(f"Failed to create Teams meeting: {response.text}")
+
 
 
 
