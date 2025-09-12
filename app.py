@@ -118,7 +118,7 @@ def handle_meeting_flow(user_id, message):
         elif "teams" in msg:
             # Check if user already authenticated
             if user_id not in teams_sessions:
-                login_url = f"https://your-app.onrender.com/ms/login?user_id={user_id}"
+                login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
                 return f"✅ Creating a Microsoft Teams meeting!\nPlease login first: {login_url}"
             else:
                 user_sessions[user_id] = {"platform": "teams", "step": "topic"}
