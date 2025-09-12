@@ -174,7 +174,7 @@ def handle_meeting_flow(user_id, message):
                     link = create_google_meet(topic, time, duration)
                 else:
                     if user_id not in teams_sessions:
-                        login_url = f"https://your-app.onrender.com/ms/login?user_id={user_id}"
+                        login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
                         del user_sessions[user_id]
                         return f"❌ You need to login first: {login_url}"
                     link = create_teams_meeting(user_id, topic, time, duration)
