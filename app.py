@@ -105,8 +105,11 @@ def create_google_meet(topic, start_time, duration):
 user_sessions = {}
 
 def handle_meeting_flow(user_id, message):
+    """Handles multi-platform meeting creation via WhatsApp"""
+    msg = message.lower()
+
+    # Start new session
     if user_id not in user_sessions:
-        msg = message.lower()
         if "zoom" in msg:
             user_sessions[user_id] = {"platform": "zoom", "step": "topic"}
             return "✅ Creating a Zoom meeting! What’s the topic?"
@@ -114,19 +117,24 @@ def handle_meeting_flow(user_id, message):
             user_sessions[user_id] = {"platform": "google", "step": "topic"}
             return "✅ Creating a Google Meet! What’s the topic?"
         elif "teams" in msg:
-            user_sessions[user_id] = {"platform": "teams", "step": "topic"}
-            return ("✅ Creating a Microsoft Teams meeting! "
-                    "Please login first: /ms/login?user_id=" + user_id)
+            user_sessions[user_id] = {"platform": "teams", "step": "login"}
+            return f"✅ Creating a Teams meeting! Please authenticate first:\n/ms/login?user_id={user_id}"
         else:
             return "❌ Say 'create zoom meeting', 'create google meeting', or 'create teams meeting'."
 
     session = user_sessions[user_id]
 
-    if session["platform"] == "teams" and session["step"] == "topic" and "topic" not in session:
-        session["topic"] = message
-        session["step"] = "time"
-        return "⏰ When should the Teams meeting start? (e.g., 'tomorrow 3pm')"
+    # ------------------- Teams flow -------------------
+    if session["platform"] == "teams":
+        # First step: ensure login
+        if session["step"] == "login":
+            return f"Please login to Teams first:\n/ms/login?user_id={user_id}"
+        elif session["step"] == "topic":
+            session["topic"] = message
+            session["step"] = "time"
+            return "⏰ When should the Teams meeting start? (e.g., 'tomorrow 3pm')"
 
+    # ------------------- Zoom / Google / Teams topic -------------------
     if session["step"] == "topic":
         session["topic"] = message
         session["step"] = "time"
@@ -168,8 +176,8 @@ def handle_meeting_flow(user_id, message):
                 elif platform == "google":
                     link = create_google_meet(topic, time, duration)
                 else:
-                    # Teams meeting creation
                     link = create_teams_meeting(user_id, topic, time, duration)
+
                 del user_sessions[user_id]
                 return f"🎉 {platform.title()} meeting created!\n🔗 {link}"
             except Exception as e:
@@ -179,7 +187,7 @@ def handle_meeting_flow(user_id, message):
             return "❌ Meeting creation cancelled."
 
 # ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
-@app.post("/webhook", response_class=PlainTextResponse, response_model=None)
+@app.post("/webhook", response_class=PlainTextResponse)
 async def whatsapp_webhook(request: Request):
     form = await request.form()
     incoming_msg = form.get("Body", "").strip()
@@ -192,10 +200,11 @@ async def whatsapp_webhook(request: Request):
         resp.message(f"❌ Error: {str(e)}")
     return Response(content=str(resp), media_type="application/xml")
 
-# ------------------- START SERVER WITH UVICORN -------------------
+# ------------------- START SERVER -------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
