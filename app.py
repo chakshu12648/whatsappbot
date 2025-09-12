@@ -11,12 +11,26 @@ from twilio.twiml.messaging_response import MessagingResponse
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import dateparser
+from teams_integration import ms_login, ms_callback, create_teams_meeting
 
 app = FastAPI()
 
 @app.get("/")
 async def root():
     return PlainTextResponse("🚀 WhatsApp Bot is running on Render!")
+
+# ----------- ENVIRONMENT VARIABLES -----------
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+
+@app.get("/ms/login")
+async def login_to_ms():
+    return await ms_login()
+
+@app.get("/ms/callback")
+async def callback_from_ms(request: Request):
+    return await ms_callback(request)
+
 
 # ----------- ENVIRONMENT VARIABLES -----------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
@@ -170,6 +184,7 @@ async def whatsapp_webhook(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
