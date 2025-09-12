@@ -1,5 +1,6 @@
 import os
 import requests
+import psycopg2
 from datetime import datetime, timedelta
 from fastapi import Request
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -9,19 +10,65 @@ MS_CLIENT_ID = os.getenv("MS_CLIENT_ID")
 MS_CLIENT_SECRET = os.getenv("MS_CLIENT_SECRET")
 MS_REDIRECT_URI = os.getenv("MS_REDIRECT_URI")  # e.g., https://your-app.onrender.com/ms/callback
 MS_TENANT_ID = os.getenv("MS_TENANT_ID", "common")  # use "common" for multi-tenant apps
+DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL URL from Render or elsewhere
 
 AUTH_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/authorize"
 TOKEN_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/token"
 
-# ------------------- In-Memory Storage -------------------
-teams_sessions = {}  # Stores user_id -> access_token
+# ------------------- PostgreSQL Connection -------------------
+def get_db_connection():
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn
+
+def initialize_db():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ms_tokens (
+            user_id TEXT PRIMARY KEY,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT,
+            expiry_time TIMESTAMP
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+initialize_db()
 
 # ------------------- Utility -------------------
 def normalize_user_id(user_id: str) -> str:
-    """Ensure consistent user_id format (strip WhatsApp suffix, keep only number)."""
     if not user_id:
         return "default_user"
     return user_id.replace("@s.whatsapp.net", "").replace("+", "").strip()
+
+# ------------------- Database Helpers -------------------
+def save_token(user_id: str, access_token: str, refresh_token=None, expiry_time=None):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO ms_tokens (user_id, access_token, refresh_token, expiry_time)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (user_id) 
+        DO UPDATE SET access_token = EXCLUDED.access_token, 
+                      refresh_token = EXCLUDED.refresh_token,
+                      expiry_time = EXCLUDED.expiry_time
+    """, (user_id, access_token, refresh_token, expiry_time))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_token(user_id: str):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT access_token FROM ms_tokens WHERE user_id=%s", (user_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if row:
+        return row[0]
+    return None
 
 # ------------------- OAuth Login URL -------------------
 def get_ms_login_url(user_id: str):
@@ -38,12 +85,10 @@ def get_ms_login_url(user_id: str):
 
 # ------------------- OAuth Routes -------------------
 async def ms_login(user_id: str):
-    """Redirect user to Microsoft login"""
     user_id = normalize_user_id(user_id)
     return RedirectResponse(url=get_ms_login_url(user_id))
 
 async def ms_callback(request: Request):
-    """Handle OAuth callback and exchange code for token"""
     code = request.query_params.get("code")
     user_id = normalize_user_id(request.query_params.get("state"))
 
@@ -66,11 +111,12 @@ async def ms_callback(request: Request):
         return HTMLResponse(f"<h3>❌ Failed to authenticate: {token_json}</h3>")
 
     access_token = token_json["access_token"]
+    refresh_token = token_json.get("refresh_token")
+    expiry_time = datetime.utcnow() + timedelta(seconds=token_json.get("expires_in", 3600))
 
-    # Store access token for this user
-    teams_sessions[user_id] = access_token
+    # Save token in database
+    save_token(user_id, access_token, refresh_token, expiry_time)
 
-    # Success message shown in browser
     return HTMLResponse(
         f"<h2>✅ Microsoft login successful!</h2>"
         f"<p>You can now go back to WhatsApp and type <b>teams</b> again to continue.</p>"
@@ -78,13 +124,12 @@ async def ms_callback(request: Request):
 
 # ------------------- Teams Meeting Creation -------------------
 def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_minutes: int = 30):
-    """Create a Teams meeting using Microsoft Graph API"""
     user_id = normalize_user_id(user_id)
 
-    if user_id not in teams_sessions:
+    access_token = get_token(user_id)
+    if not access_token:
         raise Exception("User not logged in with Microsoft Teams. Please authenticate first.")
 
-    access_token = teams_sessions[user_id]
     url = "https://graph.microsoft.com/v1.0/me/onlineMeetings"
 
     start_dt = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%SZ")
@@ -106,6 +151,7 @@ def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_m
         return response.json().get("joinWebUrl")
     else:
         raise Exception(f"Failed to create Teams meeting: {response.text}")
+
 
 
 
