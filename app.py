@@ -11,28 +11,28 @@ from twilio.twiml.messaging_response import MessagingResponse
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import dateparser
+
 from teams_integration import ms_login, ms_callback, create_teams_meeting
 
 app = FastAPI()
 
+# ------------------- Root -------------------
 @app.get("/")
 async def root():
     return PlainTextResponse("🚀 WhatsApp Bot is running on Render!")
 
-# ----------- ENVIRONMENT VARIABLES -----------
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-
+# ------------------- MS OAuth Routes -------------------
 @app.get("/ms/login")
-async def login_to_ms():
-    return await ms_login()
+async def login_to_ms(request: Request):
+    # Use WhatsApp number as state
+    user_id = request.query_params.get("user_id", "default_user")
+    return await ms_login(user_id)
 
 @app.get("/ms/callback")
 async def callback_from_ms(request: Request):
     return await ms_callback(request)
 
-
-# ----------- ENVIRONMENT VARIABLES -----------
+# ------------------- ENVIRONMENT VARIABLES -------------------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 
@@ -49,14 +49,11 @@ google_credentials = service_account.Credentials.from_service_account_info(
     scopes=["https://www.googleapis.com/auth/calendar"]
 )
 
-# ----------- ZOOM FUNCTIONS -----------
+# ------------------- ZOOM FUNCTIONS -------------------
 def get_zoom_access_token():
     token_url = "https://zoom.us/oauth/token"
     auth_header = base64.b64encode(f"{ZOOM_CLIENT_ID}:{ZOOM_CLIENT_SECRET}".encode()).decode()
-    headers = {
-        "Authorization": f"Basic {auth_header}",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
+    headers = {"Authorization": f"Basic {auth_header}", "Content-Type": "application/x-www-form-urlencoded"}
     data = {"grant_type": "account_credentials", "account_id": ZOOM_ACCOUNT_ID}
     response = requests.post(token_url, headers=headers, data=data)
     if response.status_code == 200:
@@ -74,11 +71,13 @@ def create_zoom_meeting(topic, start_time, duration):
         "start_time": start_time,
         "duration": duration,
         "timezone": "UTC",
-        "settings": {"join_before_host": False,   # ✅ must wait until host starts
-            "waiting_room": False,       # ✅ no approval needed once host starts
+        "settings": {
+            "join_before_host": False,
+            "waiting_room": False,
             "host_video": True,
             "participant_video": True,
-            "mute_upon_entry": False}
+            "mute_upon_entry": False
+        }
     }
     response = requests.post(meeting_url, headers=headers, json=meeting_data)
     if response.status_code == 201:
@@ -86,7 +85,7 @@ def create_zoom_meeting(topic, start_time, duration):
     else:
         raise Exception(f"Failed to create Zoom meeting: {response.text}")
 
-# ----------- GOOGLE MEET FUNCTIONS -----------
+# ------------------- GOOGLE MEET FUNCTIONS -------------------
 def create_google_meet(topic, start_time, duration):
     service = build("calendar", "v3", credentials=google_credentials)
     start_dt = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%SZ")
@@ -98,29 +97,35 @@ def create_google_meet(topic, start_time, duration):
         "end": {"dateTime": end_dt.isoformat() + "Z", "timeZone": "UTC"},
     }
 
-    created_event = service.events().insert(
-        calendarId="primary",
-        body=event
-    ).execute()
-
+    created_event = service.events().insert(calendarId="primary", body=event).execute()
     meet_link = created_event.get("hangoutLink") or created_event.get("htmlLink")
     return meet_link
 
-# ----------- INTERACTIVE SESSION STORAGE -----------
+# ------------------- INTERACTIVE SESSION STORAGE -------------------
 user_sessions = {}
 
 def handle_meeting_flow(user_id, message):
     if user_id not in user_sessions:
-        if "zoom" in message.lower():
+        msg = message.lower()
+        if "zoom" in msg:
             user_sessions[user_id] = {"platform": "zoom", "step": "topic"}
             return "✅ Creating a Zoom meeting! What’s the topic?"
-        elif "google" in message.lower():
+        elif "google" in msg:
             user_sessions[user_id] = {"platform": "google", "step": "topic"}
             return "✅ Creating a Google Meet! What’s the topic?"
+        elif "teams" in msg:
+            user_sessions[user_id] = {"platform": "teams", "step": "topic"}
+            return ("✅ Creating a Microsoft Teams meeting! "
+                    "Please login first: /ms/login?user_id=" + user_id)
         else:
-            return "❌ Please say 'create zoom meeting' or 'create google meeting' to start."
+            return "❌ Say 'create zoom meeting', 'create google meeting', or 'create teams meeting'."
 
     session = user_sessions[user_id]
+
+    if session["platform"] == "teams" and session["step"] == "topic" and "topic" not in session:
+        session["topic"] = message
+        session["step"] = "time"
+        return "⏰ When should the Teams meeting start? (e.g., 'tomorrow 3pm')"
 
     if session["step"] == "topic":
         session["topic"] = message
@@ -140,7 +145,7 @@ def handle_meeting_flow(user_id, message):
             duration = int(message.strip())
             session["duration"] = duration
             session["step"] = "confirm"
-            return (f"✅ Confirming your {session['platform'].title()} meeting:\n"
+            return (f"✅ Confirm your {session['platform'].title()} meeting:\n"
                     f"📌 Topic: {session['topic']}\n"
                     f"⏰ Time: {session['time']}\n"
                     f"⏳ Duration: {duration} minutes\n"
@@ -156,17 +161,24 @@ def handle_meeting_flow(user_id, message):
                 session["time"],
                 session["duration"],
             )
-            if platform == "zoom":
-                link = create_zoom_meeting(topic, time, duration)
-            else:
-                link = create_google_meet(topic, time, duration)
-            del user_sessions[user_id]
-            return f"🎉 {platform.title()} meeting created!\n🔗 {link}"
+
+            try:
+                if platform == "zoom":
+                    link = create_zoom_meeting(topic, time, duration)
+                elif platform == "google":
+                    link = create_google_meet(topic, time, duration)
+                else:
+                    # Teams meeting creation
+                    link = create_teams_meeting(user_id, topic, time, duration)
+                del user_sessions[user_id]
+                return f"🎉 {platform.title()} meeting created!\n🔗 {link}"
+            except Exception as e:
+                return f"❌ Error creating {platform.title()} meeting: {str(e)}"
         else:
             del user_sessions[user_id]
             return "❌ Meeting creation cancelled."
 
-# ----------- FASTAPI ROUTE FOR WHATSAPP -----------
+# ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
 @app.post("/webhook", response_class=PlainTextResponse, response_model=None)
 async def whatsapp_webhook(request: Request):
     form = await request.form()
@@ -180,10 +192,11 @@ async def whatsapp_webhook(request: Request):
         resp.message(f"❌ Error: {str(e)}")
     return Response(content=str(resp), media_type="application/xml")
 
-# ----------- START SERVER WITH UVICORN -----------
+# ------------------- START SERVER WITH UVICORN -------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
