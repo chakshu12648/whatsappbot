@@ -1,6 +1,6 @@
 import os
 import requests
-import psycopg2
+import psycopg  # <-- psycopg3
 from datetime import datetime, timedelta
 from fastapi import Request
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -8,32 +8,28 @@ from fastapi.responses import RedirectResponse, HTMLResponse
 # ------------------- Environment Variables -------------------
 MS_CLIENT_ID = os.getenv("MS_CLIENT_ID")
 MS_CLIENT_SECRET = os.getenv("MS_CLIENT_SECRET")
-MS_REDIRECT_URI = os.getenv("MS_REDIRECT_URI")  # e.g., https://your-app.onrender.com/ms/callback
-MS_TENANT_ID = os.getenv("MS_TENANT_ID", "common")  # use "common" for multi-tenant apps
-DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL URL from Render or elsewhere
+MS_REDIRECT_URI = os.getenv("MS_REDIRECT_URI")
+MS_TENANT_ID = os.getenv("MS_TENANT_ID", "common")
+DATABASE_URL = os.getenv("DATABASE_URL")  # e.g., postgres://user:pass@host:port/dbname
 
 AUTH_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/authorize"
 TOKEN_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/token"
 
 # ------------------- PostgreSQL Connection -------------------
 def get_db_connection():
-    conn = psycopg2.connect(DATABASE_URL)
-    return conn
+    return psycopg.connect(DATABASE_URL, autocommit=True)
 
 def initialize_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS ms_tokens (
-            user_id TEXT PRIMARY KEY,
-            access_token TEXT NOT NULL,
-            refresh_token TEXT,
-            expiry_time TIMESTAMP
-        )
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ms_tokens (
+                    user_id TEXT PRIMARY KEY,
+                    access_token TEXT NOT NULL,
+                    refresh_token TEXT,
+                    expiry_time TIMESTAMP
+                )
+            """)
 
 initialize_db()
 
@@ -45,29 +41,26 @@ def normalize_user_id(user_id: str) -> str:
 
 # ------------------- Database Helpers -------------------
 def save_token(user_id: str, access_token: str, refresh_token=None, expiry_time=None):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO ms_tokens (user_id, access_token, refresh_token, expiry_time)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (user_id) 
-        DO UPDATE SET access_token = EXCLUDED.access_token, 
-                      refresh_token = EXCLUDED.refresh_token,
-                      expiry_time = EXCLUDED.expiry_time
-    """, (user_id, access_token, refresh_token, expiry_time))
-    conn.commit()
-    cur.close()
-    conn.close()
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO ms_tokens (user_id, access_token, refresh_token, expiry_time)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (user_id) 
+                DO UPDATE SET access_token = EXCLUDED.access_token,
+                              refresh_token = EXCLUDED.refresh_token,
+                              expiry_time = EXCLUDED.expiry_time
+            """, (user_id, access_token, refresh_token, expiry_time))
 
 def get_token(user_id: str):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT access_token FROM ms_tokens WHERE user_id=%s", (user_id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT access_token, expiry_time FROM ms_tokens WHERE user_id=%s", (user_id,))
+            row = cur.fetchone()
     if row:
-        return row[0]
+        access_token, expiry_time = row
+        if expiry_time and expiry_time > datetime.utcnow():
+            return access_token
     return None
 
 # ------------------- OAuth Login URL -------------------
@@ -114,7 +107,6 @@ async def ms_callback(request: Request):
     refresh_token = token_json.get("refresh_token")
     expiry_time = datetime.utcnow() + timedelta(seconds=token_json.get("expires_in", 3600))
 
-    # Save token in database
     save_token(user_id, access_token, refresh_token, expiry_time)
 
     return HTMLResponse(
@@ -151,6 +143,7 @@ def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_m
         return response.json().get("joinWebUrl")
     else:
         raise Exception(f"Failed to create Teams meeting: {response.text}")
+
 
 
 
