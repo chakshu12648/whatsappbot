@@ -16,12 +16,13 @@ AUTH_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/author
 TOKEN_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/token"
 
 # ------------------- MongoDB Setup -------------------
-print(f"🔌 Connecting to MongoDB at {MONGO_URL}")
-client = MongoClient(MONGO_URL, tls=True, tlsAllowInvalidCertificates=True)
-db = client.whatsappbot
-tokens_collection = db.ms_tokens
-print("✅ Connected to MongoDB, using DB=whatsappbot, Collection=ms_tokens")
+print(f"📡 Connecting to MongoDB at {MONGO_URL}")
 
+client = MongoClient(MONGO_URL, tlsCAFile=certifi.where())
+db = client.get_database("whatsappbot")  # explicitly select DB
+tokens_collection = db.ms_tokens
+
+print("✅ Connected to MongoDB, using DB=whatsappbot, Collection=ms_tokens")
 # ------------------- Utility -------------------
 def normalize_user_id(user_id: str) -> str:
     if not user_id:
