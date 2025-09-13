@@ -33,6 +33,13 @@ except errors.ServerSelectionTimeoutError as e:
     print(f"❌ MongoDB connection failed: {e}")
     tokens_collection = None
 
+
+print(f"🔧 ENV MONGO_URL: {MONGO_URL}")
+if client:
+    print(f"🔧 Databases available: {client.list_database_names()}")
+    print(f"🔧 Collections in whatsappbot: {db.list_collection_names()}")
+
+
 # ------------------- Utility -------------------
 def normalize_user_id(user_id: str) -> str:
     if not user_id:
