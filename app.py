@@ -115,55 +115,42 @@ def handle_meeting_flow(user_id, message):
         print(f"🆕 New session started for {user_id}")  # DEBUG
 
         if "zoom" in msg:
-            print("➡️ Zoom flow triggered")  # DEBUG
             user_sessions[user_id] = {"platform": "zoom", "step": "topic"}
             return "✅ Creating a Zoom meeting! What’s the topic?"
 
         elif "google" in msg:
-            print("➡️ Google Meet flow triggered")  # DEBUG
             user_sessions[user_id] = {"platform": "google", "step": "topic"}
             return "✅ Creating a Google Meet! What’s the topic?"
 
         elif "teams" in msg:
-            print("➡️ Teams flow triggered")  # DEBUG
-            try:
-                token = get_token(user_id)
-                print(f"ℹ️ Token lookup for {user_id}: {token}")  # DEBUG
-            except Exception as e:
-                print(f"❌ Error fetching token for {user_id}: {e}")  # DEBUG
-                return f"❌ Error fetching token: {str(e)}"
-
+            token = get_token(user_id)
             if not token:
+                # Preserve session and send OAuth login
+                user_sessions[user_id] = {"platform": "teams", "step": "topic"}
                 login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
-                print("🔑 No token found, sending login link")  # DEBUG
-                return f"✅ Creating a Microsoft Teams meeting!\nPlease login first: {login_url}"
-
-            print("✅ Token found, proceeding with Teams flow")  # DEBUG
+                return (f"✅ Creating a Microsoft Teams meeting!\n"
+                        f"Please login first: {login_url}\n"
+                        f"After login, your flow will continue automatically.")
             user_sessions[user_id] = {"platform": "teams", "step": "topic"}
             return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
 
         else:
-            print("❌ Unknown command received")  # DEBUG
             return "❌ Say 'create zoom meeting', 'create google meeting', or 'create teams meeting'."
 
     # Existing session flow
     session = user_sessions[user_id]
-    print(f"ℹ️ Existing session for {user_id}: {session}")  # DEBUG
 
     if session["step"] == "topic" and "topic" not in session:
         session["topic"] = message
         session["step"] = "time"
-        print(f"📝 Topic set for {user_id}: {session['topic']}")  # DEBUG
         return "⏰ When should the meeting start? (e.g., 'tomorrow 3pm')"
 
     elif session["step"] == "time":
         date = dateparser.parse(message)
         if not date:
-            print(f"❌ Could not parse time for {user_id}: {message}")  # DEBUG
             return "❌ Couldn’t understand the time. Try again (e.g., 'today 5pm')."
         session["time"] = date.strftime("%Y-%m-%dT%H:%M:%SZ")
         session["step"] = "duration"
-        print(f"⏰ Time set for {user_id}: {session['time']}")  # DEBUG
         return "⏳ How long should the meeting be? (in minutes)"
 
     elif session["step"] == "duration":
@@ -171,14 +158,12 @@ def handle_meeting_flow(user_id, message):
             duration = int(message.strip())
             session["duration"] = duration
             session["step"] = "confirm"
-            print(f"⏳ Duration set for {user_id}: {duration} minutes")  # DEBUG
             return (f"✅ Confirm your {session['platform'].title()} meeting:\n"
                     f"📌 Topic: {session['topic']}\n"
                     f"⏰ Time: {session['time']}\n"
                     f"⏳ Duration: {duration} minutes\n"
                     f"Type 'yes' to confirm or 'no' to cancel.")
         except:
-            print(f"❌ Invalid duration from {user_id}: {message}")  # DEBUG
             return "❌ Please provide duration in numbers (e.g., 30)."
 
     elif session["step"] == "confirm":
@@ -189,7 +174,6 @@ def handle_meeting_flow(user_id, message):
                 session["time"],
                 session["duration"],
             )
-            print(f"✅ Confirmation received from {user_id} for {platform} meeting")  # DEBUG
             try:
                 if platform == "zoom":
                     link = create_zoom_meeting(topic, time, duration)
@@ -199,20 +183,15 @@ def handle_meeting_flow(user_id, message):
                     if not get_token(user_id):
                         login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
                         del user_sessions[user_id]
-                        print(f"❌ Missing Teams token for {user_id}, asking login again")  # DEBUG
                         return f"❌ You need to login first: {login_url}"
                     link = create_teams_meeting(user_id, topic, time, duration)
                 del user_sessions[user_id]
-                print(f"🎉 Meeting created for {user_id}: {link}")  # DEBUG
                 return f"🎉 {platform.title()} meeting created!\n🔗 {link}"
             except Exception as e:
-                print(f"❌ Error creating {platform} meeting for {user_id}: {e}")  # DEBUG
                 return f"❌ Error creating {platform.title()} meeting: {str(e)}"
         else:
             del user_sessions[user_id]
-            print(f"❌ Meeting creation cancelled by {user_id}")  # DEBUG
             return "❌ Meeting creation cancelled."
-
 
 # ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
 @app.post("/webhook", response_class=PlainTextResponse)
@@ -232,6 +211,7 @@ async def whatsapp_webhook(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
