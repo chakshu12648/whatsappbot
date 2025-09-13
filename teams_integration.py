@@ -18,6 +18,8 @@ TOKEN_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/token
 
 # ------------------- MongoDB Setup -------------------
 print(f"📡 Connecting to MongoDB at {MONGO_URL}")
+tokens_collection = None
+
 try:
     client = MongoClient(
         MONGO_URL,
@@ -31,14 +33,12 @@ try:
     print("✅ Connected to MongoDB, using DB=whatsappbot, Collection=ms_tokens")
 except errors.ServerSelectionTimeoutError as e:
     print(f"❌ MongoDB connection failed: {e}")
-    tokens_collection = None
-
+    client, db, tokens_collection = None, None, None
 
 print(f"🔧 ENV MONGO_URL: {MONGO_URL}")
-if client:
+if client is not None:
     print(f"🔧 Databases available: {client.list_database_names()}")
     print(f"🔧 Collections in whatsappbot: {db.list_collection_names()}")
-
 
 # ------------------- Utility -------------------
 def normalize_user_id(user_id: str) -> str:
@@ -48,9 +48,10 @@ def normalize_user_id(user_id: str) -> str:
 
 # ------------------- Database Helpers -------------------
 def save_token(user_id: str, access_token: str, refresh_token=None, expiry_time=None):
-    if not tokens_collection:
+    if tokens_collection is None:
         print("❌ No MongoDB connection available to save token")
         return False
+
     user_id = normalize_user_id(user_id)
     try:
         result = tokens_collection.update_one(
@@ -62,14 +63,14 @@ def save_token(user_id: str, access_token: str, refresh_token=None, expiry_time=
             }},
             upsert=True
         )
-        print(f"💾 Token saved for {user_id}, matched={result.matched_count}, modified={result.modified_count}")
+        print(f"💾 Token saved for {user_id}, matched={result.matched_count}, modified={result.modified_count}, upserted_id={result.upserted_id}")
         return True
     except Exception as e:
         print(f"❌ Failed to save token for {user_id}: {e}")
         return False
 
 def get_token(user_id: str):
-    if not tokens_collection:
+    if tokens_collection is None:
         print("❌ No MongoDB connection available to fetch token")
         return None
 
@@ -83,7 +84,7 @@ def get_token(user_id: str):
         print(f"❌ Error fetching token for {user_id}: {e}")
         return None
 
-    if not doc:
+    if doc is None:
         print(f"⚠️ No token found for {user_id}")
         return None
 
@@ -190,7 +191,7 @@ def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_m
     print(f"📅 Creating Teams meeting for {user_id}")
 
     access_token = get_token(user_id)
-    if not access_token:
+    if access_token is None:
         raise Exception("User not logged in with Microsoft Teams. Please authenticate first.")
 
     url = "https://graph.microsoft.com/v1.0/me/onlineMeetings"
