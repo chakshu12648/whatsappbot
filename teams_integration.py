@@ -40,9 +40,36 @@ def save_token(user_id: str, access_token: str, refresh_token=None, expiry_time=
 
 def get_token(user_id: str):
     doc = tokens_collection.find_one({"user_id": user_id})
-    if doc:
-        return doc.get("access_token")
-    return None
+    if not doc:
+        return None
+
+    access_token = doc.get("access_token")
+    refresh_token = doc.get("refresh_token")
+    expiry_time = doc.get("expiry_time")
+
+    # Refresh if expired
+    if expiry_time and datetime.utcnow() >= expiry_time:
+        data = {
+            "client_id": MS_CLIENT_ID,
+            "client_secret": MS_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+            "redirect_uri": MS_REDIRECT_URI,
+        }
+        response = requests.post(TOKEN_URL, data=data)
+        token_json = response.json()
+
+        if "access_token" not in token_json:
+            return None  # force user to re-login
+
+        new_access_token = token_json["access_token"]
+        new_refresh_token = token_json.get("refresh_token", refresh_token)
+        new_expiry = datetime.utcnow() + timedelta(seconds=token_json.get("expires_in", 3600))
+
+        save_token(user_id, new_access_token, new_refresh_token, new_expiry)
+        return new_access_token
+
+    return access_token
 
 # ------------------- OAuth Login URL -------------------
 def get_ms_login_url(user_id: str):
