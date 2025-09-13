@@ -3,7 +3,7 @@ import requests
 from datetime import datetime, timedelta
 from fastapi import Request
 from fastapi.responses import RedirectResponse, HTMLResponse
-from pymongo import MongoClient
+from pymongo import MongoClient, errors
 import certifi
 
 # ------------------- Environment Variables -------------------
@@ -19,11 +19,21 @@ TOKEN_URL = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/token
 # ------------------- MongoDB Setup -------------------
 print(f"📡 Connecting to MongoDB at {MONGO_URL}")
 
-client = MongoClient(MONGO_URL, tlsCAFile=certifi.where())
-db = client.get_database("whatsappbot")  # explicitly select DB
-tokens_collection = db.ms_tokens
+try:
+    client = MongoClient(
+        MONGO_URL,
+        tls=True,
+        tlsCAFile=certifi.where(),  # ✅ use CA bundle
+        serverSelectionTimeoutMS=5000
+    )
+    client.admin.command("ping")
+    db = client.get_database("whatsappbot")  # explicitly select DB
+    tokens_collection = db.ms_tokens
+    print("✅ Connected to MongoDB, using DB=whatsappbot, Collection=ms_tokens")
+except errors.ServerSelectionTimeoutError as e:
+    print(f"❌ MongoDB connection failed: {e}")
+    tokens_collection = None
 
-print("✅ Connected to MongoDB, using DB=whatsappbot, Collection=ms_tokens")
 # ------------------- Utility -------------------
 def normalize_user_id(user_id: str) -> str:
     if not user_id:
@@ -32,6 +42,9 @@ def normalize_user_id(user_id: str) -> str:
 
 # ------------------- Database Helpers -------------------
 def save_token(user_id: str, access_token: str, refresh_token=None, expiry_time=None):
+    if not tokens_collection:
+        print("❌ No MongoDB connection available to save token")
+        return
     print(f"💾 Saving token for {user_id}")
     tokens_collection.update_one(
         {"user_id": user_id},
@@ -45,6 +58,10 @@ def save_token(user_id: str, access_token: str, refresh_token=None, expiry_time=
     print(f"✅ Token saved for {user_id}")
 
 def get_token(user_id: str):
+    if not tokens_collection:
+        print("❌ No MongoDB connection available to fetch token")
+        return None
+
     print(f"🔍 Fetching token for {user_id}")
     doc = tokens_collection.find_one({"user_id": user_id})
     if not doc:
@@ -176,6 +193,7 @@ def create_teams_meeting(user_id: str, subject: str, start_time: str, duration_m
         return link
     else:
         raise Exception(f"Failed to create Teams meeting: {response.text}")
+
 
 
 
