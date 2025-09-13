@@ -3,7 +3,8 @@ import requests
 from datetime import datetime, timedelta
 from fastapi import Request
 from fastapi.responses import RedirectResponse, HTMLResponse
-from pymongo import MongoClient,certifi
+from pymongo import MongoClient
+import certifi
 
 # ------------------- Environment Variables -------------------
 MS_CLIENT_ID = os.getenv("MS_CLIENT_ID")
