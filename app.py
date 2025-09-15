@@ -254,7 +254,7 @@ def handle_meeting_flow(user_id, message):
             return "❌ Meeting creation cancelled."
 
 # ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
-@app.post("/webhook", response_class=PlainTextResponse)
+@app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     form = await request.form()
     incoming_msg = form.get("Body", "").strip()
@@ -262,8 +262,10 @@ async def whatsapp_webhook(request: Request):
     resp = MessagingResponse()
     try:
         reply = handle_meeting_flow(from_number, incoming_msg)
+        print(f"🤖 Replying to {from_number}: {reply}")  # DEBUG log
         resp.message(reply)
     except Exception as e:
+        print(f"❌ Error handling message: {str(e)}")
         resp.message(f"❌ Error: {str(e)}")
     return Response(content=str(resp), media_type="application/xml")
 
