@@ -13,8 +13,8 @@ from googleapiclient.discovery import build
 import dateparser
 from pymongo import MongoClient
 from teams_integration import ms_login, ms_callback, create_teams_meeting, get_token, normalize_user_id
-from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.rest import Client
+from birthday_reminders import start_birthday_scheduler   # 👈 NEW IMPORT
 
 app = FastAPI()
 
@@ -244,28 +244,8 @@ async def whatsapp_webhook(request: Request):
 
     return Response(content=str(resp), media_type="application/xml")
 
-# ------------------- 🎂 BIRTHDAY REMINDERS -------------------
-def send_birthday_reminders():
-    today = datetime.now().strftime("%d-%m")
-    birthdays = db.birthdays.find()
-
-    for b in birthdays:
-        try:
-            # Match only day-month
-            bday_ddmm = "-".join(b["date"].split("-")[:2])
-            if bday_ddmm == today:
-                twilio_client.messages.create(
-                    body=f"🎉 Happy Birthday {b['name']}! 🥳 Wishing you a fantastic year ahead!",
-                    from_=f"whatsapp:{TWILIO_PHONE}",
-                    to=f"whatsapp:{b['phone']}"
-                )
-                print(f"✅ Birthday reminder sent to {b['name']} ({b['phone']})")
-        except Exception as e:
-            print(f"❌ Failed to send reminder: {e}")
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(send_birthday_reminders, "cron", hour=9, minute=0)
-scheduler.start()
+# ------------------- START BIRTHDAY REMINDERS -------------------
+start_birthday_scheduler(db, twilio_client, TWILIO_PHONE)   # 👈 runs daily reminders
 
 # ------------------- START SERVER -------------------
 if __name__ == "__main__":
