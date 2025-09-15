@@ -13,6 +13,8 @@ from googleapiclient.discovery import build
 import dateparser
 from pymongo import MongoClient
 from teams_integration import ms_login, ms_callback, create_teams_meeting, get_token, normalize_user_id
+from apscheduler.schedulers.background import BackgroundScheduler
+from twilio.rest import Client
 
 app = FastAPI()
 
@@ -34,6 +36,7 @@ async def callback_from_ms(request: Request):
 # ------------------- ENVIRONMENT VARIABLES -------------------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE = os.getenv("TWILIO_PHONE")  # WhatsApp sender number
 ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
@@ -41,6 +44,9 @@ MONGO_URL = os.getenv("MONGO_URL")
 
 mongo_client = MongoClient(MONGO_URL)
 db = mongo_client.whatsappbot
+
+# ✅ Twilio client
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # ------------------- GOOGLE SERVICE ACCOUNT -------------------
 credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
@@ -130,8 +136,17 @@ def handle_meeting_flow(user_id, message):
                 )
             user_sessions[user_id] = {"platform": "teams", "step": "topic"}
             return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
+        elif "add birthday" in msg:
+            parts = message.split()
+            if len(parts) >= 4:
+                name = parts[2]
+                date_str = parts[3]  # Expected format MM-DD-YYYY or DD-MM-YYYY
+                db.birthdays.insert_one({"name": name, "date": date_str, "phone": user_id})
+                return f"🎂 Birthday for {name} on {date_str} saved!"
+            else:
+                return "❌ Please provide in format: add birthday <name> <DD-MM-YYYY>"
         else:
-            return "❌ Say 'create zoom meeting', 'create google meeting', or 'create teams meeting'."
+            return "❌ Say 'create zoom meeting', 'create google meeting', 'create teams meeting', or 'add birthday <name> <DD-MM-YYYY>'."
 
     # Existing session flow
     session = user_sessions[user_id]
@@ -208,11 +223,33 @@ async def whatsapp_webhook(request: Request):
 
     return Response(content=str(resp), media_type="application/xml")
 
+# ------------------- 🎂 BIRTHDAY REMINDERS -------------------
+def send_birthday_reminders():
+    today = datetime.now().strftime("%d-%m")
+    birthdays = db.birthdays.find()
+
+    for b in birthdays:
+        try:
+            # Match only day-month
+            bday_mmdd = "-".join(b["date"].split("-")[:2])
+            if bday_mmdd == today:
+                twilio_client.messages.create(
+                    body=f"🎉 Happy Birthday {b['name']}! 🥳 Wishing you a fantastic year ahead!",
+                    from_=f"whatsapp:{TWILIO_PHONE}",
+                    to=f"whatsapp:{b['phone']}"
+                )
+                print(f"✅ Birthday reminder sent to {b['name']} ({b['phone']})")
+        except Exception as e:
+            print(f"❌ Failed to send reminder: {e}")
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(send_birthday_reminders, "cron", hour=9, minute=0)
+scheduler.start()
+
 # ------------------- START SERVER -------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
-
 
 
 
