@@ -15,7 +15,6 @@ from pymongo import MongoClient
 
 from teams_integration import ms_login, ms_callback, create_teams_meeting, get_token, normalize_user_id
 
-# 🔹 NEW IMPORTS for birthdays
 from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.rest import Client
 import logging
@@ -24,7 +23,13 @@ app = FastAPI()
 
 # ------------------- Root -------------------
 @app.api_route("/", methods=["GET", "HEAD"])
-async def root():
+async def root(request: Request):
+    """
+    Handles GET and HEAD requests for Render health checks.
+    HEAD requests return 200 OK with empty body.
+    """
+    if request.method == "HEAD":
+        return Response(status_code=200)
     return PlainTextResponse("🚀 WhatsApp Bot is running on Render!")
 
 # ------------------- MS OAuth Routes -------------------
@@ -49,7 +54,7 @@ MONGO_URL = os.getenv("MONGO_URL")
 mongo_client = MongoClient(MONGO_URL)
 db = mongo_client.whatsappbot
 
-# 🔹 Birthdays collection
+# Birthdays collection
 birthdays_collection = db.birthdays
 
 # Twilio Client for birthday reminders
@@ -279,6 +284,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=port)
+
 
 
 
