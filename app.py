@@ -12,9 +12,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import dateparser
 from pymongo import MongoClient
-
 from teams_integration import ms_login, ms_callback, create_teams_meeting, get_token, normalize_user_id
-
 from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.rest import Client
 import logging
@@ -45,12 +43,11 @@ async def callback_from_ms(request: Request):
 # ------------------- ENVIRONMENT VARIABLES -------------------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-
 ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
-
 MONGO_URL = os.getenv("MONGO_URL")
+
 mongo_client = MongoClient(MONGO_URL)
 db = mongo_client.whatsappbot
 
@@ -166,7 +163,7 @@ def handle_meeting_flow(user_id, message):
     user_id = normalize_user_id(user_id)
     print(f"📩 Incoming from {user_id}: {msg}")  # DEBUG
 
-    # 🔹 Birthday Commands
+    # Birthday Commands
     if msg.startswith("add birthday"):
         try:
             _, _, name, date_str = message.split(maxsplit=3)
@@ -177,18 +174,15 @@ def handle_meeting_flow(user_id, message):
     if msg.startswith("list birthdays"):
         return list_birthdays()
 
-    # 🔹 Meeting Flow (unchanged)
+    # Meeting Flow
     if user_id not in user_sessions:
         print(f"🆕 New session started for {user_id}")  # DEBUG
-
         if "zoom" in msg:
             user_sessions[user_id] = {"platform": "zoom", "step": "topic"}
             return "✅ Creating a Zoom meeting! What’s the topic?"
-
         elif "google" in msg:
             user_sessions[user_id] = {"platform": "google", "step": "topic"}
             return "✅ Creating a Google Meet! What’s the topic?"
-
         elif "teams" in msg:
             token = get_token(user_id)
             if not token:
@@ -199,17 +193,15 @@ def handle_meeting_flow(user_id, message):
                         f"After login, your flow will continue automatically.")
             user_sessions[user_id] = {"platform": "teams", "step": "topic"}
             return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
-
         else:
             return "❌ Say 'create zoom meeting', 'create google meeting', or 'create teams meeting'."
 
-    # Existing session flow (unchanged) ...
+    # Existing session flow
     session = user_sessions[user_id]
     if session["step"] == "topic" and "topic" not in session:
         session["topic"] = message
         session["step"] = "time"
         return "⏰ When should the meeting start? (e.g., 'tomorrow 3pm')"
-
     elif session["step"] == "time":
         date = dateparser.parse(message)
         if not date:
@@ -217,7 +209,6 @@ def handle_meeting_flow(user_id, message):
         session["time"] = date.strftime("%Y-%m-%dT%H:%M:%SZ")
         session["step"] = "duration"
         return "⏳ How long should the meeting be? (in minutes)"
-
     elif session["step"] == "duration":
         try:
             duration = int(message.strip())
@@ -230,7 +221,6 @@ def handle_meeting_flow(user_id, message):
                     f"Type 'yes' to confirm or 'no' to cancel.")
         except:
             return "❌ Please provide duration in numbers (e.g., 30)."
-
     elif session["step"] == "confirm":
         if message.lower() == "yes":
             platform, topic, time, duration = (
@@ -284,6 +274,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=port)
+
 
 
 
