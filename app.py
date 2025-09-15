@@ -208,20 +208,33 @@ def handle_meeting_flow(user_id, message):
             return "❌ Meeting creation cancelled."
 
 # ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
+# ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
 @app.post("/webhook", response_class=PlainTextResponse)
 async def whatsapp_webhook(request: Request):
     form = await request.form()
     incoming_msg = form.get("Body", "").strip()
     from_number = form.get("From", "").replace("whatsapp:", "")
 
+    print(f"📩 Incoming from {from_number}: {incoming_msg}")  # DEBUG
+
     resp = MessagingResponse()
     try:
+        # Use your meeting flow handler
         reply = handle_meeting_flow(from_number, incoming_msg)
+
+        # ✅ Always reply back via Twilio
+        if not reply:
+            reply = "❌ I didn’t understand that. Please say 'create zoom meeting', 'create google meeting', or 'create teams meeting'."
+
         resp.message(reply)
+
     except Exception as e:
+        print(f"⚠️ Error: {e}")  # Debug log
         resp.message(f"❌ Error: {str(e)}")
 
+    # ✅ Return XML Twilio expects
     return Response(content=str(resp), media_type="application/xml")
+
 
 # ------------------- 🎂 BIRTHDAY REMINDERS -------------------
 def send_birthday_reminders():
