@@ -14,7 +14,7 @@ import dateparser
 from pymongo import MongoClient
 from teams_integration import ms_login, ms_callback, create_teams_meeting, get_token, normalize_user_id
 from twilio.rest import Client
-from birthday_reminders import start_birthday_scheduler, schedule_birthday  # ✅ updated import
+from birthday_reminders import start_birthday_scheduler  # ✅ updated import
 
 app = FastAPI()
 
