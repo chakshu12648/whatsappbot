@@ -13,21 +13,12 @@ from googleapiclient.discovery import build
 import dateparser
 from pymongo import MongoClient
 from teams_integration import ms_login, ms_callback, create_teams_meeting, get_token, normalize_user_id
-from apscheduler.schedulers.background import BackgroundScheduler
-from twilio.rest import Client
-import logging
 
 app = FastAPI()
 
 # ------------------- Root -------------------
-@app.api_route("/", methods=["GET", "HEAD"])
-async def root(request: Request):
-    """
-    Handles GET and HEAD requests for Render health checks.
-    HEAD requests return 200 OK with empty body.
-    """
-    if request.method == "HEAD":
-        return Response(status_code=200)
+@app.get("/")
+async def root():
     return PlainTextResponse("🚀 WhatsApp Bot is running on Render!")
 
 # ------------------- MS OAuth Routes -------------------
@@ -50,12 +41,6 @@ MONGO_URL = os.getenv("MONGO_URL")
 
 mongo_client = MongoClient(MONGO_URL)
 db = mongo_client.whatsappbot
-
-# Birthdays collection
-birthdays_collection = db.birthdays
-
-# Twilio Client for birthday reminders
-twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # ------------------- GOOGLE SERVICE ACCOUNT -------------------
 credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
@@ -119,62 +104,12 @@ def create_google_meet(topic, start_time, duration):
 # ------------------- INTERACTIVE SESSION STORAGE -------------------
 user_sessions = {}
 
-# ------------------- BIRTHDAY HELPERS -------------------
-def add_birthday(user_id, name, date_str):
-    try:
-        date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        birthdays_collection.update_one(
-            {"user_id": user_id, "name": name},
-            {"$set": {"birthday": date.isoformat()}},
-            upsert=True
-        )
-        return f"🎂 Saved birthday for {name} on {date.strftime('%d %B')}!"
-    except ValueError:
-        return "❌ Please send the date in YYYY-MM-DD format (e.g., 1998-09-15)."
-
-def list_birthdays():
-    upcoming = list(birthdays_collection.find())
-    if not upcoming:
-        return "📭 No birthdays saved yet."
-    reply = "🎉 Upcoming Birthdays:\n"
-    for b in upcoming:
-        reply += f"📌 {b['name']} → {b['birthday']}\n"
-    return reply
-
-def send_birthday_reminders():
-    today = datetime.utcnow().strftime("%m-%d")
-    for b in birthdays_collection.find():
-        try:
-            b_date = datetime.strptime(b["birthday"], "%Y-%m-%d").strftime("%m-%d")
-            if b_date == today:
-                msg = f"🎂 Reminder: Today is {b['name']}'s Birthday!"
-                logging.info(f"📩 Sending reminder: {msg}")
-                twilio_client.messages.create(
-                    body=msg,
-                    from_="whatsapp:+14155238886",
-                    to=f"whatsapp:+{b['user_id']}"
-                )
-        except Exception as e:
-            logging.error(f"Error sending birthday reminder: {str(e)}")
-
-# ------------------- MAIN FLOW -------------------
 def handle_meeting_flow(user_id, message):
     msg = message.lower()
     user_id = normalize_user_id(user_id)
+
     print(f"📩 Incoming from {user_id}: {msg}")  # DEBUG
 
-    # Birthday Commands
-    if msg.startswith("add birthday"):
-        try:
-            _, _, name, date_str = message.split(maxsplit=3)
-            return add_birthday(user_id, name, date_str)
-        except:
-            return "❌ Usage: add birthday <name> <YYYY-MM-DD>"
-
-    if msg.startswith("list birthdays"):
-        return list_birthdays()
-
-    # Meeting Flow
     if user_id not in user_sessions:
         print(f"🆕 New session started for {user_id}")  # DEBUG
         if "zoom" in msg:
@@ -188,9 +123,11 @@ def handle_meeting_flow(user_id, message):
             if not token:
                 user_sessions[user_id] = {"platform": "teams", "step": "topic"}
                 login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
-                return (f"✅ Creating a Microsoft Teams meeting!\n"
-                        f"Please login first: {login_url}\n"
-                        f"After login, your flow will continue automatically.")
+                return (
+                    f"✅ Creating a Microsoft Teams meeting!\n"
+                    f"Please login first: {login_url}\n"
+                    f"After login, your flow will continue automatically."
+                )
             user_sessions[user_id] = {"platform": "teams", "step": "topic"}
             return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
         else:
@@ -202,6 +139,7 @@ def handle_meeting_flow(user_id, message):
         session["topic"] = message
         session["step"] = "time"
         return "⏰ When should the meeting start? (e.g., 'tomorrow 3pm')"
+
     elif session["step"] == "time":
         date = dateparser.parse(message)
         if not date:
@@ -209,18 +147,22 @@ def handle_meeting_flow(user_id, message):
         session["time"] = date.strftime("%Y-%m-%dT%H:%M:%SZ")
         session["step"] = "duration"
         return "⏳ How long should the meeting be? (in minutes)"
+
     elif session["step"] == "duration":
         try:
             duration = int(message.strip())
             session["duration"] = duration
             session["step"] = "confirm"
-            return (f"✅ Confirm your {session['platform'].title()} meeting:\n"
-                    f"📌 Topic: {session['topic']}\n"
-                    f"⏰ Time: {session['time']}\n"
-                    f"⏳ Duration: {duration} minutes\n"
-                    f"Type 'yes' to confirm or 'no' to cancel.")
+            return (
+                f"✅ Confirm your {session['platform'].title()} meeting:\n"
+                f"📌 Topic: {session['topic']}\n"
+                f"⏰ Time: {session['time']}\n"
+                f"⏳ Duration: {duration} minutes\n"
+                f"Type 'yes' to confirm or 'no' to cancel."
+            )
         except:
             return "❌ Please provide duration in numbers (e.g., 30)."
+
     elif session["step"] == "confirm":
         if message.lower() == "yes":
             platform, topic, time, duration = (
@@ -240,40 +182,36 @@ def handle_meeting_flow(user_id, message):
                         del user_sessions[user_id]
                         return f"❌ You need to login first: {login_url}"
                     link = create_teams_meeting(user_id, topic, time, duration)
+
                 del user_sessions[user_id]
                 return f"🎉 {platform.title()} meeting created!\n🔗 {link}"
             except Exception as e:
                 return f"❌ Error creating {platform.title()} meeting: {str(e)}"
+
         else:
             del user_sessions[user_id]
             return "❌ Meeting creation cancelled."
 
 # ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
-@app.post("/webhook")
+@app.post("/webhook", response_class=PlainTextResponse)
 async def whatsapp_webhook(request: Request):
     form = await request.form()
     incoming_msg = form.get("Body", "").strip()
     from_number = form.get("From", "").replace("whatsapp:", "")
+
     resp = MessagingResponse()
     try:
         reply = handle_meeting_flow(from_number, incoming_msg)
-        print(f"🤖 Replying to {from_number}: {reply}")  # DEBUG log
         resp.message(reply)
     except Exception as e:
-        print(f"❌ Error handling message: {str(e)}")
         resp.message(f"❌ Error: {str(e)}")
-    return Response(content=str(resp), media_type="application/xml")
 
-# ------------------- Scheduler -------------------
-scheduler = BackgroundScheduler()
-scheduler.add_job(send_birthday_reminders, "cron", hour=7)  # runs every day at 7 AM UTC
-scheduler.start()
+    return Response(content=str(resp), media_type="application/xml")
 
 # ------------------- START SERVER -------------------
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port)
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
 
 
 
