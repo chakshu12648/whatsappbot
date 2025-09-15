@@ -116,6 +116,28 @@ def handle_meeting_flow(user_id, message):
 
     print(f"📩 Incoming from {user_id}: {msg}")  # DEBUG
 
+    # ------------------- Handle birthdays -------------------
+    if "add birthday" in msg:
+        parts = message.split()
+        if len(parts) >= 4:
+            name = parts[2]
+            date_str = parts[3]  # Expected format DD-MM-YYYY
+            db.birthdays.insert_one({"name": name, "date": date_str, "phone": user_id})
+            return f"🎂 Birthday for {name} on {date_str} saved!"
+        else:
+            return "❌ Please provide in format: add birthday <name> <DD-MM-YYYY>"
+
+    if "show birthdays" in msg:
+        birthdays = list(db.birthdays.find({"phone": user_id}))
+        if birthdays:
+            reply = "🎉 Your saved birthdays:\n"
+            for b in birthdays:
+                reply += f"- {b['name']}: {b['date']}\n"
+            return reply
+        else:
+            return "📭 No birthdays saved yet. Use: add birthday <name> <DD-MM-YYYY>"
+
+    # ------------------- Handle meetings -------------------
     if user_id not in user_sessions:
         print(f"🆕 New session started for {user_id}")  # DEBUG
         if "zoom" in msg:
@@ -136,15 +158,6 @@ def handle_meeting_flow(user_id, message):
                 )
             user_sessions[user_id] = {"platform": "teams", "step": "topic"}
             return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
-        elif "add birthday" in msg:
-            parts = message.split()
-            if len(parts) >= 4:
-                name = parts[2]
-                date_str = parts[3]  # Expected format MM-DD-YYYY or DD-MM-YYYY
-                db.birthdays.insert_one({"name": name, "date": date_str, "phone": user_id})
-                return f"🎂 Birthday for {name} on {date_str} saved!"
-            else:
-                return "❌ Please provide in format: add birthday <name> <DD-MM-YYYY>"
         else:
             return "❌ Say 'create zoom meeting', 'create google meeting', 'create teams meeting', or 'add birthday <name> <DD-MM-YYYY>'."
 
@@ -208,7 +221,6 @@ def handle_meeting_flow(user_id, message):
             return "❌ Meeting creation cancelled."
 
 # ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
-# ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
 @app.post("/webhook", response_class=PlainTextResponse)
 async def whatsapp_webhook(request: Request):
     form = await request.form()
@@ -219,12 +231,10 @@ async def whatsapp_webhook(request: Request):
 
     resp = MessagingResponse()
     try:
-        # Use your meeting flow handler
         reply = handle_meeting_flow(from_number, incoming_msg)
 
-        # ✅ Always reply back via Twilio
         if not reply:
-            reply = "❌ I didn’t understand that. Please say 'create zoom meeting', 'create google meeting', or 'create teams meeting'."
+            reply = "❌ I didn’t understand that. Please try again."
 
         resp.message(reply)
 
@@ -232,9 +242,7 @@ async def whatsapp_webhook(request: Request):
         print(f"⚠️ Error: {e}")  # Debug log
         resp.message(f"❌ Error: {str(e)}")
 
-    # ✅ Return XML Twilio expects
     return Response(content=str(resp), media_type="application/xml")
-
 
 # ------------------- 🎂 BIRTHDAY REMINDERS -------------------
 def send_birthday_reminders():
@@ -244,8 +252,8 @@ def send_birthday_reminders():
     for b in birthdays:
         try:
             # Match only day-month
-            bday_mmdd = "-".join(b["date"].split("-")[:2])
-            if bday_mmdd == today:
+            bday_ddmm = "-".join(b["date"].split("-")[:2])
+            if bday_ddmm == today:
                 twilio_client.messages.create(
                     body=f"🎉 Happy Birthday {b['name']}! 🥳 Wishing you a fantastic year ahead!",
                     from_=f"whatsapp:{TWILIO_PHONE}",
