@@ -58,9 +58,10 @@ uvicorn==0.35.0
 yarl==1.20.1 
 psycopg==3.2.10
 pymongo==4.8.0
-apscheduler
-twilio
-pymongo
+apscheduler==3.10.4
+twilio==9.2.3
+pymongo==4.9.1
+
 
 
 
