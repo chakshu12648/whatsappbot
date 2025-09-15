@@ -123,7 +123,8 @@ def handle_meeting_flow(user_id, message):
             name = parts[2]
             date_str = parts[3]  # Expected format DD-MM-YYYY
             db.birthdays.insert_one({"name": name, "date": date_str, "phone": user_id})
-            schedule_birthday(name, date_str, user_id, twilio_client, TWILIO_PHONE)  # ✅ schedule reminder
+            # ✅ schedule reminder
+            # schedule_birthday(name, date_str, user_id, twilio_client, TWILIO_PHONE)
             return f"🎂 Birthday for {name} on {date_str} saved & reminder scheduled!"
         else:
             return "❌ Please provide in format: add birthday <name> <DD-MM-YYYY>"
@@ -222,7 +223,7 @@ def handle_meeting_flow(user_id, message):
             return "❌ Meeting creation cancelled."
 
 # ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
-@app.post("/webhook", response_class=PlainTextResponse)
+@app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     form = await request.form()
     incoming_msg = form.get("Body", "").strip()
@@ -233,17 +234,18 @@ async def whatsapp_webhook(request: Request):
     resp = MessagingResponse()
     try:
         reply = handle_meeting_flow(from_number, incoming_msg)
-
         if not reply:
             reply = "❌ I didn’t understand that. Please try again."
 
+        print(f"➡️ Replying: {reply}")  # DEBUG
         resp.message(reply)
 
     except Exception as e:
         print(f"⚠️ Error: {e}")  # Debug log
         resp.message(f"❌ Error: {str(e)}")
 
-    return Response(content=str(resp), media_type="application/xml")
+    # ✅ Important change: use .to_xml() for Twilio
+    return Response(content=resp.to_xml(), media_type="application/xml")
 
 # ------------------- START BIRTHDAY REMINDERS -------------------
 start_birthday_scheduler(db, twilio_client, TWILIO_PHONE)   # ✅ runs daily reminders
