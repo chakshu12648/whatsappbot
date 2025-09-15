@@ -23,8 +23,12 @@ def start_birthday_scheduler(db, twilio_client, twilio_phone):
                 print(f"❌ Failed to send reminder: {e}")
 
     # Scheduler
-    scheduler = BackgroundScheduler()
+    scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Kolkata"))
     scheduler.add_job(send_birthday_reminders, "cron", hour=9, minute=0)
-    scheduler.start()
+    
+    # ✅ Send reminders for today immediately on startup
+    send_birthday_reminders()
 
+    scheduler.start()
     print("🎂 Birthday reminder scheduler started!")
+
