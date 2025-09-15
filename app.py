@@ -107,9 +107,20 @@ def create_google_meet(topic, start_time, duration):
     meet_link = created_event.get("hangoutLink") or created_event.get("htmlLink")
     return meet_link
 
-# ------------------- INTERACTIVE SESSION STORAGE -------------------
-user_sessions = {}
+# ------------------- HELPER FUNCTIONS FOR SESSION STORAGE -------------------
+def get_user_session(user_id):
+    session = db.sessions.find_one({"user_id": user_id})
+    if not session:
+        return None
+    return session
 
+def save_user_session(user_id, data):
+    db.sessions.update_one({"user_id": user_id}, {"$set": data}, upsert=True)
+
+def delete_user_session(user_id):
+    db.sessions.delete_one({"user_id": user_id})
+
+# ------------------- INTERACTIVE SESSION STORAGE -------------------
 def handle_meeting_flow(user_id, message):
     msg = message.lower()
     user_id = normalize_user_id(user_id)
@@ -140,34 +151,36 @@ def handle_meeting_flow(user_id, message):
             return "📭 No birthdays saved yet. Use: add birthday <name> <DD-MM-YYYY>"
 
     # ------------------- Handle meetings -------------------
-    if user_id not in user_sessions:
+    session = get_user_session(user_id)
+
+    if not session:
         print(f"🆕 New session started for {user_id}")  # DEBUG
         if "zoom" in msg:
-            user_sessions[user_id] = {"platform": "zoom", "step": "topic"}
+            save_user_session(user_id, {"platform": "zoom", "step": "topic"})
             return "✅ Creating a Zoom meeting! What’s the topic?"
         elif "google" in msg:
-            user_sessions[user_id] = {"platform": "google", "step": "topic"}
+            save_user_session(user_id, {"platform": "google", "step": "topic"})
             return "✅ Creating a Google Meet! What’s the topic?"
         elif "teams" in msg:
             token = get_token(user_id)
             if not token:
-                user_sessions[user_id] = {"platform": "teams", "step": "topic"}
+                save_user_session(user_id, {"platform": "teams", "step": "topic"})
                 login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
                 return (
                     f"✅ Creating a Microsoft Teams meeting!\n"
                     f"Please login first: {login_url}\n"
                     f"After login, your flow will continue automatically."
                 )
-            user_sessions[user_id] = {"platform": "teams", "step": "topic"}
+            save_user_session(user_id, {"platform": "teams", "step": "topic"})
             return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
         else:
             return "❌ Say 'zoom', 'google', 'teams', or 'add birthday <name> <DD-MM-YYYY>'."
 
     # Existing session flow
-    session = user_sessions[user_id]
     if session["step"] == "topic" and "topic" not in session:
         session["topic"] = message
         session["step"] = "time"
+        save_user_session(user_id, session)
         return "⏰ When should the meeting start? (e.g., 'tomorrow 3pm')"
 
     elif session["step"] == "time":
@@ -176,6 +189,7 @@ def handle_meeting_flow(user_id, message):
             return "❌ Couldn’t understand the time. Try again (e.g., 'today 5pm')."
         session["time"] = date.strftime("%Y-%m-%dT%H:%M:%SZ")
         session["step"] = "duration"
+        save_user_session(user_id, session)
         return "⏳ How long should the meeting be? (in minutes)"
 
     elif session["step"] == "duration":
@@ -183,6 +197,7 @@ def handle_meeting_flow(user_id, message):
             duration = int(message.strip())
             session["duration"] = duration
             session["step"] = "confirm"
+            save_user_session(user_id, session)
             return (
                 f"✅ Confirm your {session['platform'].title()} meeting:\n"
                 f"📌 Topic: {session['topic']}\n"
@@ -209,17 +224,17 @@ def handle_meeting_flow(user_id, message):
                 else:
                     if not get_token(user_id):
                         login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
-                        del user_sessions[user_id]
+                        delete_user_session(user_id)
                         return f"❌ You need to login first: {login_url}"
                     link = create_teams_meeting(user_id, topic, time, duration)
 
-                del user_sessions[user_id]
+                delete_user_session(user_id)
                 return f"🎉 {platform.title()} meeting created!\n🔗 {link}"
             except Exception as e:
                 return f"❌ Error creating {platform.title()} meeting: {str(e)}"
 
         else:
-            del user_sessions[user_id]
+            delete_user_session(user_id)
             return "❌ Meeting creation cancelled."
 
 # ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
@@ -244,7 +259,6 @@ async def whatsapp_webhook(request: Request):
         print(f"⚠️ Error: {e}")  # Debug log
         resp.message(f"❌ Error: {str(e)}")
 
-    # ✅ Important change: use .to_xml() for Twilio
     return Response(content=resp.to_xml(), media_type="application/xml")
 
 # ------------------- START BIRTHDAY REMINDERS -------------------
@@ -254,6 +268,7 @@ start_birthday_scheduler(db, twilio_client, TWILIO_PHONE)   # ✅ runs daily rem
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
