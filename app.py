@@ -14,7 +14,7 @@ import dateparser
 from pymongo import MongoClient
 from teams_integration import ms_login, ms_callback, create_teams_meeting, get_token, normalize_user_id
 from twilio.rest import Client
-from birthday_reminders import start_birthday_scheduler   # 👈 NEW IMPORT
+from birthday_reminders import start_birthday_scheduler, schedule_birthday  # ✅ updated import
 
 app = FastAPI()
 
@@ -123,7 +123,8 @@ def handle_meeting_flow(user_id, message):
             name = parts[2]
             date_str = parts[3]  # Expected format DD-MM-YYYY
             db.birthdays.insert_one({"name": name, "date": date_str, "phone": user_id})
-            return f"🎂 Birthday for {name} on {date_str} saved!"
+            schedule_birthday(name, date_str, user_id, twilio_client, TWILIO_PHONE)  # ✅ schedule reminder
+            return f"🎂 Birthday for {name} on {date_str} saved & reminder scheduled!"
         else:
             return "❌ Please provide in format: add birthday <name> <DD-MM-YYYY>"
 
@@ -159,7 +160,7 @@ def handle_meeting_flow(user_id, message):
             user_sessions[user_id] = {"platform": "teams", "step": "topic"}
             return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
         else:
-            return "❌ Say 'create zoom meeting', 'create google meeting', 'create teams meeting', or 'add birthday <name> <DD-MM-YYYY>'."
+            return "❌ Say 'zoom', 'google', 'teams', or 'add birthday <name> <DD-MM-YYYY>'."
 
     # Existing session flow
     session = user_sessions[user_id]
@@ -245,7 +246,7 @@ async def whatsapp_webhook(request: Request):
     return Response(content=str(resp), media_type="application/xml")
 
 # ------------------- START BIRTHDAY REMINDERS -------------------
-start_birthday_scheduler(db, twilio_client, TWILIO_PHONE)   # 👈 runs daily reminders
+start_birthday_scheduler(db, twilio_client, TWILIO_PHONE)   # ✅ runs daily reminders
 
 # ------------------- START SERVER -------------------
 if __name__ == "__main__":
