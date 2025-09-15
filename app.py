@@ -23,7 +23,7 @@ import logging
 app = FastAPI()
 
 # ------------------- Root -------------------
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return PlainTextResponse("🚀 WhatsApp Bot is running on Render!")
 
@@ -277,7 +277,9 @@ scheduler.start()
 # ------------------- START SERVER -------------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
+
 
 
 
