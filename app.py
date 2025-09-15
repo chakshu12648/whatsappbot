@@ -15,6 +15,11 @@ from pymongo import MongoClient
 
 from teams_integration import ms_login, ms_callback, create_teams_meeting, get_token, normalize_user_id
 
+# 🔹 NEW IMPORTS for birthdays
+from apscheduler.schedulers.background import BackgroundScheduler
+from twilio.rest import Client
+import logging
+
 app = FastAPI()
 
 # ------------------- Root -------------------
@@ -43,6 +48,12 @@ ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
 MONGO_URL = os.getenv("MONGO_URL")
 mongo_client = MongoClient(MONGO_URL)
 db = mongo_client.whatsappbot
+
+# 🔹 Birthdays collection
+birthdays_collection = db.birthdays
+
+# Twilio Client for birthday reminders
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # ------------------- GOOGLE SERVICE ACCOUNT -------------------
 credentials_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
@@ -106,11 +117,62 @@ def create_google_meet(topic, start_time, duration):
 # ------------------- INTERACTIVE SESSION STORAGE -------------------
 user_sessions = {}
 
+# ------------------- BIRTHDAY HELPERS -------------------
+def add_birthday(user_id, name, date_str):
+    try:
+        date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        birthdays_collection.update_one(
+            {"user_id": user_id, "name": name},
+            {"$set": {"birthday": date.isoformat()}},
+            upsert=True
+        )
+        return f"🎂 Saved birthday for {name} on {date.strftime('%d %B')}!"
+    except ValueError:
+        return "❌ Please send the date in YYYY-MM-DD format (e.g., 1998-09-15)."
+
+def list_birthdays():
+    upcoming = list(birthdays_collection.find())
+    if not upcoming:
+        return "📭 No birthdays saved yet."
+    reply = "🎉 Upcoming Birthdays:\n"
+    for b in upcoming:
+        reply += f"📌 {b['name']} → {b['birthday']}\n"
+    return reply
+
+def send_birthday_reminders():
+    today = datetime.utcnow().strftime("%m-%d")
+    for b in birthdays_collection.find():
+        try:
+            b_date = datetime.strptime(b["birthday"], "%Y-%m-%d").strftime("%m-%d")
+            if b_date == today:
+                msg = f"🎂 Reminder: Today is {b['name']}'s Birthday!"
+                logging.info(f"📩 Sending reminder: {msg}")
+                twilio_client.messages.create(
+                    body=msg,
+                    from_="whatsapp:+14155238886",
+                    to=f"whatsapp:+{b['user_id']}"
+                )
+        except Exception as e:
+            logging.error(f"Error sending birthday reminder: {str(e)}")
+
+# ------------------- MAIN FLOW -------------------
 def handle_meeting_flow(user_id, message):
     msg = message.lower()
     user_id = normalize_user_id(user_id)
     print(f"📩 Incoming from {user_id}: {msg}")  # DEBUG
 
+    # 🔹 Birthday Commands
+    if msg.startswith("add birthday"):
+        try:
+            _, _, name, date_str = message.split(maxsplit=3)
+            return add_birthday(user_id, name, date_str)
+        except:
+            return "❌ Usage: add birthday <name> <YYYY-MM-DD>"
+
+    if msg.startswith("list birthdays"):
+        return list_birthdays()
+
+    # 🔹 Meeting Flow (unchanged)
     if user_id not in user_sessions:
         print(f"🆕 New session started for {user_id}")  # DEBUG
 
@@ -125,7 +187,6 @@ def handle_meeting_flow(user_id, message):
         elif "teams" in msg:
             token = get_token(user_id)
             if not token:
-                # Preserve session and send OAuth login
                 user_sessions[user_id] = {"platform": "teams", "step": "topic"}
                 login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
                 return (f"✅ Creating a Microsoft Teams meeting!\n"
@@ -137,9 +198,8 @@ def handle_meeting_flow(user_id, message):
         else:
             return "❌ Say 'create zoom meeting', 'create google meeting', or 'create teams meeting'."
 
-    # Existing session flow
+    # Existing session flow (unchanged) ...
     session = user_sessions[user_id]
-
     if session["step"] == "topic" and "topic" not in session:
         session["topic"] = message
         session["step"] = "time"
@@ -207,10 +267,16 @@ async def whatsapp_webhook(request: Request):
         resp.message(f"❌ Error: {str(e)}")
     return Response(content=str(resp), media_type="application/xml")
 
+# ------------------- Scheduler -------------------
+scheduler = BackgroundScheduler()
+scheduler.add_job(send_birthday_reminders, "cron", hour=7)  # runs every day at 7 AM UTC
+scheduler.start()
+
 # ------------------- START SERVER -------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
