@@ -5,7 +5,7 @@ import pytz
 import pandas as pd
 import os
 
-# Set your default recipient (HR/admin) WhatsApp number
+# Set your default recipient (HR/admin) WhatsApp numberr
 DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE")  # e.g., "whatsapp:+911234567890"
 
 # Path to your Excel file
