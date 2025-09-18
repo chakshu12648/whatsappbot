@@ -34,7 +34,7 @@ async def login_to_ms(request: Request):
 async def callback_from_ms(request: Request):
     return await ms_callback(request)
 
-# ------------------- ENVIRONMENT VARIABLES -------------------
+# ------------------- ENVIRONMENT VARIABLES ------------------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 
