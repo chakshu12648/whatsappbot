@@ -16,7 +16,7 @@ def start_birthday_scheduler(twilio_client):
         try:
             today = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%d-%m")
             df = pd.read_excel(EXCEL_FILE_PATH)
-            df["DOB"] = pd.to_datetime(df["DOB"], errors="coerce")  # Convert to datetime
+            df["DOB"] = pd.to_datetime(df["DOB."], errors="coerce")  # Convert to datetime
             df["dd-mm"] = df["DOB"].dt.strftime("%d-%m")
 
             today_birthdays = df[df["dd-mm"] == today]
