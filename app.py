@@ -14,8 +14,8 @@ import dateparser
 from pymongo import MongoClient
 from teams_integration import ms_login, ms_callback, create_teams_meeting, get_token, normalize_user_id
 from twilio.rest import Client
-from birthday_reminders import start_birthday_scheduler  # ✅ updated import
-import pandas as pd   # ✅ added for Excel importt
+from birthday_reminders import start_birthday_scheduler
+import pandas as pd
 
 app = FastAPI()
 
@@ -37,7 +37,7 @@ async def callback_from_ms(request: Request):
 # ------------------- ENVIRONMENT VARIABLES -------------------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_PHONE = os.getenv("TWILIO_PHONE")  # WhatsApp sender number
+TWILIO_PHONE = os.getenv("TWILIO_PHONE")
 ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
@@ -46,7 +46,7 @@ MONGO_URL = os.getenv("MONGO_URL")
 mongo_client = MongoClient(MONGO_URL)
 db = mongo_client.whatsappbot
 
-# ✅ Twilio client
+# Twilio client
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # ------------------- GOOGLE SERVICE ACCOUNT -------------------
@@ -108,7 +108,7 @@ def create_google_meet(topic, start_time, duration):
     meet_link = created_event.get("hangoutLink") or created_event.get("htmlLink")
     return meet_link
 
-# ------------------- HELPER FUNCTIONS FOR SESSION STORAGE -------------------
+# ------------------- HELPER FUNCTIONS -------------------
 def get_user_session(user_id):
     session = db.sessions.find_one({"user_id": user_id})
     if not session:
@@ -121,16 +121,15 @@ def save_user_session(user_id, data):
 def delete_user_session(user_id):
     db.sessions.delete_one({"user_id": user_id})
 
-# ------------------- IMPORT BIRTHDAYS FROM EXCEL -------------------
+# ------------------- IMPORT BIRTHDAYS -------------------
 def import_birthdays_from_excel(file_path="employees_birthdays.xlsx"):
     df = pd.read_excel(file_path)
 
     for _, row in df.iterrows():
         try:
-            # DOB column format: 1-Jan → convert to dd-mm
             dob = datetime.strptime(str(row["DOB."]), "%d-%b").strftime("%d-%m")
             db.birthdays.update_one(
-                {"e_code": row["E.Code"]},  # match by employee code
+                {"e_code": row["E.Code"]},
                 {
                     "$set": {
                         "name": row["Name"],
@@ -145,26 +144,24 @@ def import_birthdays_from_excel(file_path="employees_birthdays.xlsx"):
 
     print("✅ Birthdays imported/updated from Excel")
 
-# ------------------- INTERACTIVE SESSION STORAGE -------------------
+# ------------------- INTERACTIVE SESSION -------------------
 def handle_meeting_flow(user_id, message):
     msg = message.lower()
     user_id = normalize_user_id(user_id)
 
     print(f"📩 Incoming from {user_id}: {msg}")  # DEBUG
 
-    # ------------------- Handle birthdays -------------------
     if "add birthday" in msg:
         parts = message.split()
         if len(parts) >= 4:
             name = parts[2]
-            date_str = parts[3]  # Expected format DD-MM-YYYY
+            date_str = parts[3]
             db.birthdays.insert_one({"name": name, "date": date_str, "phone": user_id})
             return f"🎂 Birthday for {name} on {date_str} saved & reminder scheduled!"
         else:
             return "❌ Please provide in format: add birthday <name> <DD-MM-YYYY>"
 
     if "show birthdays" in msg:
-        # Get all birthdays from the collection
         birthdays = list(db.birthdays.find())
         if birthdays:
             reply = "🎉 All birthdays:\n"
@@ -174,7 +171,6 @@ def handle_meeting_flow(user_id, message):
         else:
             return "📭 No birthdays found yet."
 
-    # ------------------- Handle meetings -------------------
     session = get_user_session(user_id)
 
     if not session:
@@ -200,7 +196,7 @@ def handle_meeting_flow(user_id, message):
         else:
             return "❌ Say 'zoom', 'google', 'teams', or 'add birthday <name> <DD-MM-YYYY>'."
 
-# ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
+# ------------------- FASTAPI WEBHOOK -------------------
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     form = await request.form()
@@ -224,14 +220,18 @@ async def whatsapp_webhook(request: Request):
 
     return Response(content=resp.to_xml(), media_type="application/xml")
 
-# ------------------- START BIRTHDAY REMINDERS -------------------
-start_birthday_scheduler(db)  # ✅ runs daily reminders
+# ------------------- STARTUP EVENT -------------------
+@app.on_event("startup")
+def on_startup():
+    import_birthdays_from_excel("employees_birthdays.xlsx")
+    start_birthday_scheduler(db)
+    print("✅ Startup tasks completed")
 
 # ------------------- START SERVER -------------------
 if __name__ == "__main__":
     import uvicorn
-    import_birthdays_from_excel("employees_birthdays.xlsx")
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
