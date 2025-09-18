@@ -163,19 +163,16 @@ def handle_meeting_flow(user_id, message):
         else:
             return "❌ Please provide in format: add birthday <name> <DD-MM-YYYY>"
 
-  if "show birthdays" in msg:
-    # Get all birthdays from the collection
-    birthdays = list(db.birthdays.find())
-    
-    if birthdays:
-        reply = "🎉 All birthdays:\n"
-        for b in birthdays:
-            reply += f"- {b['name']}: {b['date']}\n"
-        return reply
-    else:
-        return "📭 No birthdays found yet."
-
-
+    if "show birthdays" in msg:
+        # Get all birthdays from the collection
+        birthdays = list(db.birthdays.find())
+        if birthdays:
+            reply = "🎉 All birthdays:\n"
+            for b in birthdays:
+                reply += f"- {b['name']}: {b['date']}\n"
+            return reply
+        else:
+            return "📭 No birthdays found yet."
 
     # ------------------- Handle meetings -------------------
     session = get_user_session(user_id)
@@ -203,9 +200,6 @@ def handle_meeting_flow(user_id, message):
         else:
             return "❌ Say 'zoom', 'google', 'teams', or 'add birthday <name> <DD-MM-YYYY>'."
 
-    # Existing session flow (unchanged) ...
-    # (keeping the rest of your meeting flow code intact)
-
 # ------------------- FASTAPI ROUTE FOR WHATSAPP -------------------
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
@@ -231,15 +225,14 @@ async def whatsapp_webhook(request: Request):
     return Response(content=resp.to_xml(), media_type="application/xml")
 
 # ------------------- START BIRTHDAY REMINDERS -------------------
-start_birthday_scheduler(db)
-   # ✅ runs daily reminders
+start_birthday_scheduler(db)  # ✅ runs daily reminders
 
 # ------------------- START SERVER -------------------
 if __name__ == "__main__":
     import uvicorn
-    # ✅ Uncomment the next line once you want to load Excel automatically at startup
     # import_birthdays_from_excel("employees_birthdays.xlsx")
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
