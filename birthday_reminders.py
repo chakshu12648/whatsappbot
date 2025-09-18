@@ -2,49 +2,40 @@ from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.rest import Client
 import pytz
-import pandas as pd
+from pymongo import MongoClient
 import os
 
-# Set your default recipient (HR/admin) WhatsApp number
-DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE")  # e.g., "whatsapp:+911234567890"
+# MongoDB connection
+MONGO_URL = os.getenv("MONGO_URL")
+mongo_client = MongoClient(MONGO_URL)
+db = mongo_client.whatsappbot
 
-# Path to your Excel file
-EXCEL_FILE_PATH = os.getenv("BIRTHDAY_EXCEL_PATH", "employees_birthdays.xlsx")  # set path in Render env
+# Default recipient (HR/admin)
+DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE")  # e.g., whatsapp:+918290704743
 
 
 def start_birthday_scheduler(twilio_client):
     def send_birthday_reminders():
         try:
             today = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%d-%m")
-            df = pd.read_excel(EXCEL_FILE_PATH)
 
-            # Ensure DOB column is parsed correctly
-            if "DOB." in df.columns:
-                df["DOB"] = pd.to_datetime(df["DOB."], errors="coerce")
-            elif "DOB" in df.columns:
-                df["DOB"] = pd.to_datetime(df["DOB"], errors="coerce")
-            else:
-                print("❌ DOB column not found in Excel file.")
-                return
+            # Fetch birthdays from MongoDB
+            today_birthdays = list(db.birthdays.find({"date": today}))
 
-            df["dd-mm"] = df["DOB"].dt.strftime("%d-%m")
-
-            today_birthdays = df[df["dd-mm"] == today]
-
-            if today_birthdays.empty:
+            if not today_birthdays:
                 print("📭 No birthdays today.")
                 return
 
             # Prepare message
             message = "🎉 Today's Birthdays:\n"
-            for _, row in today_birthdays.iterrows():
-                message += f"- {row['Name']} ({row['Designation']})\n"
+            for b in today_birthdays:
+                message += f"- {b['name']} ({b.get('designation', 'No designation')})\n"
 
             # Send to default recipient
             twilio_client.messages.create(
                 body=message,
-                from_="whatsapp:+14155238886",
-                to=f"whatsapp:{DEFAULT_RECIPIENT_PHONE}"
+                from_="whatsapp:+14155238886",  # Twilio Sandbox
+                to=DEFAULT_RECIPIENT_PHONE
             )
             print(f"✅ Birthday reminder sent for {len(today_birthdays)} employees.")
 
@@ -54,10 +45,10 @@ def start_birthday_scheduler(twilio_client):
     # Scheduler
     scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Kolkata"))
 
-    # For daily execution at 9:00 AM
+    # Daily at 9:00 AM
     scheduler.add_job(send_birthday_reminders, "cron", hour=9, minute=0)
 
-    # For testing: run every 1 minute
+    # For testing: every 1 minute
     scheduler.add_job(send_birthday_reminders, "interval", minutes=1)
 
     # Run immediately on startup for testing
