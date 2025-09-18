@@ -43,7 +43,7 @@ def start_birthday_scheduler(twilio_client):
             # Send to default recipient
             twilio_client.messages.create(
                 body=message,
-                from_=f"whatsapp:{os.getenv('TWILIO_PHONE')}",
+                from_="whatsapp:+14155238886",
                 to=f"whatsapp:{DEFAULT_RECIPIENT_PHONE}"
             )
             print(f"✅ Birthday reminder sent for {len(today_birthdays)} employees.")
