@@ -163,15 +163,19 @@ def handle_meeting_flow(user_id, message):
         else:
             return "❌ Please provide in format: add birthday <name> <DD-MM-YYYY>"
 
-    if "show birthdays" in msg:
-        birthdays = list(db.birthdays.find({"phone": user_id}))
-        if birthdays:
-            reply = "🎉 Your saved birthdays:\n"
-            for b in birthdays:
-                reply += f"- {b['name']}: {b['date']}\n"
-            return reply
-        else:
-            return "📭 No birthdays saved yet. Use: add birthday <name> <DD-MM-YYYY>"
+  if "show birthdays" in msg:
+    # Get all birthdays from the collection
+    birthdays = list(db.birthdays.find())
+    
+    if birthdays:
+        reply = "🎉 All birthdays:\n"
+        for b in birthdays:
+            reply += f"- {b['name']}: {b['date']}\n"
+        return reply
+    else:
+        return "📭 No birthdays found yet."
+
+
 
     # ------------------- Handle meetings -------------------
     session = get_user_session(user_id)
