@@ -45,7 +45,7 @@ def start_birthday_scheduler(twilio_client):
     scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Kolkata"))
     scheduler.add_job(send_birthday_reminders, "cron", hour=9, minute=0)
 
-    # Send reminders immediately on startup
+    # Send reminders immediately on startupp
     send_birthday_reminders()
 
     scheduler.start()
