@@ -5,18 +5,28 @@ import pytz
 import pandas as pd
 import os
 
-# Set your default recipient (HR/admin) WhatsApp numberr
+# Set your default recipient (HR/admin) WhatsApp number
 DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE")  # e.g., "whatsapp:+911234567890"
 
 # Path to your Excel file
 EXCEL_FILE_PATH = os.getenv("BIRTHDAY_EXCEL_PATH", "employees_birthdays.xlsx")  # set path in Render env
+
 
 def start_birthday_scheduler(twilio_client):
     def send_birthday_reminders():
         try:
             today = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%d-%m")
             df = pd.read_excel(EXCEL_FILE_PATH)
-            df["DOB"] = pd.to_datetime(df["DOB."], errors="coerce")  # Convert to datetime
+
+            # Ensure DOB column is parsed correctly
+            if "DOB." in df.columns:
+                df["DOB"] = pd.to_datetime(df["DOB."], errors="coerce")
+            elif "DOB" in df.columns:
+                df["DOB"] = pd.to_datetime(df["DOB"], errors="coerce")
+            else:
+                print("❌ DOB column not found in Excel file.")
+                return
+
             df["dd-mm"] = df["DOB"].dt.strftime("%d-%m")
 
             today_birthdays = df[df["dd-mm"] == today]
@@ -43,11 +53,17 @@ def start_birthday_scheduler(twilio_client):
 
     # Scheduler
     scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Kolkata"))
-    scheduler.add_job(send_birthday_reminders, "interval",  minutes=1)
 
-    # Send reminders immediately on startupp
+    # For daily execution at 9:00 AM
+    scheduler.add_job(send_birthday_reminders, "cron", hour=9, minute=0)
+
+    # For testing: run every 1 minute
+    scheduler.add_job(send_birthday_reminders, "interval", minutes=1)
+
+    # Run immediately on startup for testing
     send_birthday_reminders()
 
     scheduler.start()
     print("🎂 Birthday reminder scheduler started!")
+
 
