@@ -235,7 +235,7 @@ async def whatsapp_webhook(request: Request):
 @app.on_event("startup")
 def on_startup():
     import_birthdays_from_excel("employees_birthdays.xlsx")
-    start_birthday_scheduler(db)
+    start_birthday_scheduler(twilio_client)
     print("✅ Startup tasks completed")
 
 # ------------------- START SERVER -------------------
