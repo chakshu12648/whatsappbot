@@ -37,7 +37,13 @@ async def callback_from_ms(request: Request):
 # ------------------- ENVIRONMENT VARIABLES -------------------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_PHONE = os.getenv("TWILIO_PHONE")
+
+# Twilio sandbox sender number (must be in format: whatsapp:+1234567890)
+TWILIO_PHONE = os.getenv("TWILIO_PHONE", "whatsapp:+14155238886")
+
+# Default recipient phone (your personal test number, must also be in format: whatsapp:+91XXXXXXXXXX)
+DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE", "whatsapp:+918290704743")
+
 ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
@@ -235,13 +241,14 @@ async def whatsapp_webhook(request: Request):
 @app.on_event("startup")
 def on_startup():
     import_birthdays_from_excel("employees_birthdays.xlsx")
-    start_birthday_scheduler(twilio_client)
+    start_birthday_scheduler(twilio_client, TWILIO_PHONE, DEFAULT_RECIPIENT_PHONE)
     print("✅ Startup tasks completed")
 
 # ------------------- START SERVER -------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
