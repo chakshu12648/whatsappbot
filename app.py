@@ -227,7 +227,8 @@ async def whatsapp_webhook(request: Request):
     return Response(content=resp.to_xml(), media_type="application/xml")
 
 # ------------------- START BIRTHDAY REMINDERS -------------------
-start_birthday_scheduler(db, twilio_client, TWILIO_PHONE)   # ✅ runs daily reminders
+start_birthday_scheduler(db)
+   # ✅ runs daily reminders
 
 # ------------------- START SERVER -------------------
 if __name__ == "__main__":
