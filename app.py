@@ -128,7 +128,7 @@ def import_birthdays_from_excel(file_path="employees_birthdays.xlsx"):
     for _, row in df.iterrows():
         try:
             # DOB column format: 1-Jan → convert to dd-mm
-            dob = datetime.strptime(str(row["DOB"]), "%d-%b").strftime("%d-%m")
+            dob = datetime.strptime(str(row["DOB."]), "%d-%b").strftime("%d-%m")
             db.birthdays.update_one(
                 {"e_code": row["E.Code"]},  # match by employee code
                 {
