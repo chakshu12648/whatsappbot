@@ -127,7 +127,18 @@ def import_birthdays_from_excel(file_path="employees_birthdays.xlsx"):
 
     for _, row in df.iterrows():
         try:
-            dob = datetime.strptime(str(row["DOB."]), "%d-%b").strftime("%d-%m")
+            dob_value = row["DOB."]
+
+            # Handle datetime or timestamp
+            if isinstance(dob_value, (datetime, pd.Timestamp)):
+                dob = dob_value.strftime("%d-%m")
+            else:
+                # Convert to datetime if it's a string
+                parsed_date = pd.to_datetime(str(dob_value), errors="coerce")
+                if pd.isna(parsed_date):
+                    raise ValueError(f"Unrecognized date format: {dob_value}")
+                dob = parsed_date.strftime("%d-%m")
+
             db.birthdays.update_one(
                 {"e_code": row["E.Code"]},
                 {
@@ -231,6 +242,7 @@ def on_startup():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
