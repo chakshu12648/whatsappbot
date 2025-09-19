@@ -24,7 +24,7 @@ app = FastAPI()
 async def root():
     return PlainTextResponse("🚀 WhatsApp Bot is running on Render!")
 
-# ------------------- MS OAuth Routes -------------------
+# ------------------- MS OAuth Routes ------------------
 @app.get("/ms/login")
 async def login_to_ms(request: Request):
     user_id = request.query_params.get("user_id", "default_user")
