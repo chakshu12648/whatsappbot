@@ -15,14 +15,23 @@ DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE") # e.g., whatsapp:
 TWILIO_PHONE = os.getenv("TWILIO_PHONE", "whatsapp:+14155238886")
 
 
-
-def start_birthday_scheduler(twilio_client,TWILIO_PHONE,DEFAULT_RECIPIENT_PHONE):
+def start_birthday_scheduler(twilio_client, TWILIO_PHONE, DEFAULT_RECIPIENT_PHONE):
     def send_birthday_reminders():
         try:
             today = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%d-%m")
 
-            # Fetch birthdays from MongoDB
-            today_birthdays = list(db.birthdays.find({"date": today}))
+            # Fetch all birthdays
+            all_birthdays = list(db.birthdays.find())
+
+            # Filter birthdays matching today's dd-mm
+            today_birthdays = []
+            for b in all_birthdays:
+                try:
+                    dob = datetime.strptime(b["date"], "%d-%m-%Y")
+                    if dob.strftime("%d-%m") == today:
+                        today_birthdays.append(b)
+                except Exception as e:
+                    print(f"⚠️ Skipped invalid date for {b}: {e}")
 
             if not today_birthdays:
                 print("📭 No birthdays today.")
@@ -33,10 +42,9 @@ def start_birthday_scheduler(twilio_client,TWILIO_PHONE,DEFAULT_RECIPIENT_PHONE)
             for b in today_birthdays:
                 message += f"- {b['name']} ({b.get('designation', 'No designation')})\n"
 
-            # Send to default recipient
             twilio_client.messages.create(
                 body=message,
-                from_="whatsapp:+14155238886",  # Twilio Sandbox
+                from_=TWILIO_PHONE,  # Use Twilio Sandbox or your number
                 to=DEFAULT_RECIPIENT_PHONE
             )
             print(f"✅ Birthday reminder sent for {len(today_birthdays)} employees.")
@@ -58,5 +66,6 @@ def start_birthday_scheduler(twilio_client,TWILIO_PHONE,DEFAULT_RECIPIENT_PHONE)
 
     scheduler.start()
     print("🎂 Birthday reminder scheduler started!")
+
 
 
