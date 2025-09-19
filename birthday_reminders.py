@@ -58,8 +58,8 @@ def start_birthday_scheduler(twilio_client, TWILIO_PHONE, DEFAULT_RECIPIENT_PHON
     # Daily at 9:00 AM
     scheduler.add_job(send_birthday_reminders, "cron", hour=9, minute=0)
 
-    # For testing: every 1 minute
-    scheduler.add_job(send_birthday_reminders, "interval", minutes=1)
+    
+    
 
     # Run immediately on startup for testing
     send_birthday_reminders()
