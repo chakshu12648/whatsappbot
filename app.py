@@ -115,18 +115,33 @@ def create_google_meet(topic, start_time, duration):
     return meet_link
 
 # ------------------- HELPER FUNCTIONS -------------------
-def get_user_session(user_id):
+# ------------------- HELPER FUNCTIONS -------------------
+def get_user_session(user_id, timeout_seconds=60):
     session = db.sessions.find_one({"user_id": user_id})
     if not session:
         return None
+
+    # Check session timeout
+    last_active = session.get("last_active")
+    if last_active and (datetime.utcnow() - last_active).total_seconds() > timeout_seconds:
+        delete_user_session(user_id)  # auto delete expired session
+        return None  # treat as no session
+
     return session
 
 def save_user_session(user_id, data):
+    data["last_active"] = datetime.utcnow()  # add/update timestamp
     db.sessions.update_one({"user_id": user_id}, {"$set": data}, upsert=True)
 
 def delete_user_session(user_id):
     db.sessions.delete_one({"user_id": user_id})
 
+def refresh_session(user_id):
+    db.sessions.update_one(
+        {"user_id": user_id},
+        {"$set": {"last_active": datetime.utcnow()}}
+    )
+ 
 # ------------------- IMPORT BIRTHDAYS -------------------
 def import_birthdays_from_excel(file_path="employees_birthdays.xlsx"):
     df = pd.read_excel(file_path)
@@ -190,6 +205,9 @@ def handle_meeting_flow(user_id, message):
 
     session = get_user_session(user_id)
 
+    if session:
+        refresh_session(user_id)  # keep session alive if still valid
+
     if not session:
         print(f"🆕 New session started for {user_id}")  # DEBUG
         if "zoom" in msg:
@@ -212,6 +230,7 @@ def handle_meeting_flow(user_id, message):
             return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
         else:
             return "❌ Say 'zoom', 'google', 'teams', or 'add birthday <name> <DD-MM-YYYY>'."
+
 
 # ------------------- FASTAPI WEBHOOK -------------------
 @app.post("/webhook")
