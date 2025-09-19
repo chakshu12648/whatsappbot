@@ -11,10 +11,12 @@ mongo_client = MongoClient(MONGO_URL)
 db = mongo_client.whatsappbot
 
 # Default recipient (HR/admin)
-DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE")  # e.g., whatsapp:+918290704743
+DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE") # e.g., whatsapp:+918290704743
+TWILIO_PHONE = os.getenv("TWILIO_PHONE", "whatsapp:+14155238886")
 
 
-def start_birthday_scheduler(twilio_client):
+
+def start_birthday_scheduler(twilio_client,TWILIO_PHONE,DEFAULT_RECIPIENT_PHONE):
     def send_birthday_reminders():
         try:
             today = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%d-%m")
