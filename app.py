@@ -177,6 +177,7 @@ def import_birthdays_from_excel(file_path="employees_birthdays.xlsx"):
     print("✅ Birthdays imported/updated from Excel")
 
 # ------------------- INTERACTIVE SESSION -------------------
+# ------------------- INTERACTIVE SESSION -------------------
 def handle_meeting_flow(user_id, message):
     msg = message.lower()
     user_id = normalize_user_id(user_id)
@@ -207,29 +208,73 @@ def handle_meeting_flow(user_id, message):
 
     if session:
         refresh_session(user_id)  # keep session alive if still valid
+        step = session.get("step")
+        platform = session.get("platform")
 
-    if not session:
-        print(f"🆕 New session started for {user_id}")  # DEBUG
-        if "zoom" in msg:
-            save_user_session(user_id, {"platform": "zoom", "step": "topic"})
-            return "✅ Creating a Zoom meeting! What’s the topic?"
-        elif "google" in msg:
-            save_user_session(user_id, {"platform": "google", "step": "topic"})
-            return "✅ Creating a Google Meet! What’s the topic?"
-        elif "teams" in msg:
-            token = get_token(user_id)
-            if not token:
-                save_user_session(user_id, {"platform": "teams", "step": "topic"})
-                login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
-                return (
-                    f"✅ Creating a Microsoft Teams meeting!\n"
-                    f"Please login first: {login_url}\n"
-                    f"After login, your flow will continue automatically."
-                )
+        # Step 1 → Topic
+        if step == "topic":
+            save_user_session(user_id, {**session, "step": "time", "topic": message})
+            return "📅 Great! When should the meeting start? (e.g. 'tomorrow 3pm')"
+
+        # Step 2 → Time
+        elif step == "time":
+            start_time = dateparser.parse(message)
+            if not start_time:
+                return "❌ I couldn’t understand the time. Please try again."
+            save_user_session(
+                user_id,
+                {**session, "step": "duration", "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%SZ")}
+            )
+            return "⏱️ Got it! How long should the meeting last (in minutes)?"
+
+        # Step 3 → Duration
+        elif step == "duration":
+            try:
+                duration = int(message)
+            except:
+                return "❌ Please enter a valid duration in minutes."
+
+            topic = session["topic"]
+            start_time = session["start_time"]
+
+            if platform == "zoom":
+                meeting_link = create_zoom_meeting(topic, start_time, duration)
+            elif platform == "google":
+                meeting_link = create_google_meet(topic, start_time, duration)
+            elif platform == "teams":
+                meeting_link = create_teams_meeting(user_id, topic, start_time, duration)
+            else:
+                meeting_link = None
+
+            delete_user_session(user_id)
+            return f"✅ Meeting created!\n🔗 {meeting_link}"
+
+        # Unexpected session state
+        return "❌ Something went wrong with your session. Please start again."
+
+    # If no session exists → start new
+    print(f"🆕 New session started for {user_id}")  # DEBUG
+    if "zoom" in msg:
+        save_user_session(user_id, {"platform": "zoom", "step": "topic"})
+        return "✅ Creating a Zoom meeting! What’s the topic?"
+    elif "google" in msg:
+        save_user_session(user_id, {"platform": "google", "step": "topic"})
+        return "✅ Creating a Google Meet! What’s the topic?"
+    elif "teams" in msg:
+        token = get_token(user_id)
+        if not token:
             save_user_session(user_id, {"platform": "teams", "step": "topic"})
-            return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
-        else:
-            return "❌ Say 'zoom', 'google', 'teams', or 'add birthday <name> <DD-MM-YYYY>'."
+            login_url = f"https://whatsappbot-f8mu.onrender.com/ms/login?user_id={user_id}"
+            return (
+                f"✅ Creating a Microsoft Teams meeting!\n"
+                f"Please login first: {login_url}\n"
+                f"After login, your flow will continue automatically."
+            )
+        save_user_session(user_id, {"platform": "teams", "step": "topic"})
+        return "✅ Creating a Microsoft Teams meeting! What’s the topic?"
+    else:
+        return "❌ Say 'zoom', 'google', 'teams', or 'add birthday <name> <DD-MM-YYYY>'."
+
 
 
 # ------------------- FASTAPI WEBHOOK -------------------
