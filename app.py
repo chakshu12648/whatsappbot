@@ -39,10 +39,10 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 
 # Twilio sandbox sender number (must be in format: whatsapp:+1234567890)
-TWILIO_PHONE = os.getenv("TWILIO_PHONE", "whatsapp:+14155238886")
+TWILIO_PHONE = os.getenv("TWILIO_PHONE")
 
 # Default recipient phone (your personal test number, must also be in format: whatsapp:+91XXXXXXXXXX)
-DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE", "whatsapp:+918290704743")
+DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE")
 
 ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
