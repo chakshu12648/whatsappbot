@@ -14,6 +14,9 @@ db = mongo_client.whatsappbot
 DEFAULT_RECIPIENT_PHONE = os.getenv("DEFAULT_RECIPIENT_PHONE") # e.g., whatsapp:+918290704743
 TWILIO_PHONE = os.getenv("TWILIO_PHONE", "whatsapp:+14155238886")
 
+# Sandbox join code (replace with yours)
+SANDBOX_JOIN_CODE = "join somebody-cost"
+
 
 def start_birthday_scheduler(twilio_client, TWILIO_PHONE, DEFAULT_RECIPIENT_PHONE):
     def send_birthday_reminders():
@@ -52,20 +55,36 @@ def start_birthday_scheduler(twilio_client, TWILIO_PHONE, DEFAULT_RECIPIENT_PHON
         except Exception as e:
             print(f"❌ Failed to send birthday reminders: {e}")
 
+
+    # 🔹 Auto-refresh sandbox session
+    def refresh_sandbox_session():
+        try:
+            twilio_client.messages.create(
+                body=SANDBOX_JOIN_CODE,
+                from_=DEFAULT_RECIPIENT_PHONE,  # your WhatsApp
+                to=TWILIO_PHONE                 # Twilio Sandbox number
+            )
+            print("✅ Sandbox session refreshed automatically.")
+        except Exception as e:
+            print(f"❌ Failed to refresh sandbox session: {e}")
+
+
     # Scheduler
     scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Kolkata"))
 
     # Daily at 9:00 AM
     scheduler.add_job(send_birthday_reminders, "cron", hour=9, minute=0)
 
-    
-    
+    # Refresh sandbox session every 23 hours
+    scheduler.add_job(refresh_sandbox_session, "interval", hours=23)
 
     # Run immediately on startup for testing
     send_birthday_reminders()
+    refresh_sandbox_session()
 
     scheduler.start()
     print("🎂 Birthday reminder scheduler started!")
+
 
 
 
