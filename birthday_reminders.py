@@ -74,6 +74,8 @@ def start_birthday_scheduler(twilio_client, TWILIO_PHONE, DEFAULT_RECIPIENT_PHON
 
     # Daily at 9:00 AM
     scheduler.add_job(send_birthday_reminders, "cron", hour=9, minute=0)
+    
+    scheduler.add_job(send_birthday_reminders, "cron", hour=10, minute=35)
 
     # Refresh sandbox session every 23 hours
     scheduler.add_job(refresh_sandbox_session, "interval", hours=23)
